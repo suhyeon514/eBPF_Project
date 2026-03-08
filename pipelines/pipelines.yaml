@@ -1,0 +1,30 @@
+# ~/analysis-server/pipelines/pipelines.yaml
+version: "2"
+
+edr-log-pipeline:
+  source:
+    kafka:
+      bootstrap_servers: ["kafka:9092"]
+      encryption:
+        type: "none"
+      topics:
+        - name: "security-logs"
+          group_id: "edr-analysis-group"
+
+  processor:
+    - date:
+        from_time_received: true
+        destination: "@timestamp"
+    - add_entries:
+        entries:
+          - key: "processed_by"
+            value: "data-prepper-node"
+
+  sink:
+    - opensearch:
+        hosts: ["https://opensearch:9200"]
+        username: "admin"
+        # [수정] 아래와 같이 변수로 작성하면 docker-compose가 .env의 값을 주입합니다.
+        password: "${OS_ADMIN_PASSWORD}" 
+        insecure: true
+        index: "security-logs-%{yyyy.MM.dd}"
