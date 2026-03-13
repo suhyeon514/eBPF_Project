@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -56,13 +57,17 @@ type tetragonProcess struct {
 	ExecID       string    `json:"exec_id"`
 	PID          uint32    `json:"pid"`
 	UID          uint32    `json:"uid"`
-	GID          uint32    `json:"gid"`
+	GID          *uint32   `json:"gid,omitempty"`
 	Cwd          string    `json:"cwd"`
 	Binary       string    `json:"binary"`
-	Arguments    string    `json:"arguments"`
+	Arguments    string    `json:"arguments,omitempty"`
+	Flags        string    `json:"flags,omitempty"`
 	StartTime    time.Time `json:"start_time"`
-	ParentExecID string    `json:"parent_exec_id"`
-	TID          uint32    `json:"tid"`
+	AUID         *uint32   `json:"auid,omitempty"`
+	ParentExecID string    `json:"parent_exec_id,omitempty"`
+	TID          uint32    `json:"tid,omitempty"`
+	RefCnt       *uint32   `json:"refcnt,omitempty"`
+	InInitTree   *bool     `json:"in_init_tree,omitempty"`
 }
 
 type tetragonProcessExecEvent struct {
@@ -78,8 +83,7 @@ type tetragonProcessExitEvent struct {
 	ProcessExit struct {
 		Process tetragonProcess  `json:"process"`
 		Parent  *tetragonProcess `json:"parent,omitempty"`
-		Status  *uint32          `json:"status,omitempty"`
-		Signal  string           `json:"signal,omitempty"`
+		Time    time.Time        `json:"time"`
 	} `json:"process_exit"`
 	NodeName string    `json:"node_name"`
 	Time     time.Time `json:"time"`
@@ -112,11 +116,11 @@ func (n *Normalizer) normalizeProcessExec(data []byte, raw model.RawEnvelope) (m
 		},
 	)
 
-	ev.Process = &model.ProcessMeta{
+	proc := &model.ProcessMeta{
 		PID:        src.ProcessExec.Process.PID,
-		TGID:       src.ProcessExec.Process.PID, // 1차 버전에서는 pid 기준으로 둔다
+		TGID:       src.ProcessExec.Process.PID, // 1차 버전: pid 기준
 		UID:        src.ProcessExec.Process.UID,
-		GID:        src.ProcessExec.Process.GID,
+		GID:        derefUint32(src.ProcessExec.Process.GID),
 		Comm:       baseName(src.ProcessExec.Process.Binary),
 		Exe:        src.ProcessExec.Process.Binary,
 		Args:       splitArgs(src.ProcessExec.Process.Arguments),
@@ -127,15 +131,26 @@ func (n *Normalizer) normalizeProcessExec(data []byte, raw model.RawEnvelope) (m
 	}
 
 	if src.ProcessExec.Parent != nil {
-		ev.Process.PPID = src.ProcessExec.Parent.PID
-		ev.Process.ParentComm = baseName(src.ProcessExec.Parent.Binary)
-		ev.Process.ParentExe = src.ProcessExec.Parent.Binary
+		proc.PPID = src.ProcessExec.Parent.PID
+		proc.ParentComm = baseName(src.ProcessExec.Parent.Binary)
+		proc.ParentExe = src.ProcessExec.Parent.Binary
 	}
 
+	ev.Process = proc
 	ev.RawRef = &model.RawReference{
 		Source:     string(raw.Source),
 		RawType:    raw.RawType,
 		RawEventID: src.ProcessExec.Process.ExecID,
+	}
+
+	if ev.Labels == nil {
+		ev.Labels = map[string]string{}
+	}
+	if src.ProcessExec.Process.Flags != "" {
+		ev.Labels["tetragon_flags"] = src.ProcessExec.Process.Flags
+	}
+	if src.ProcessExec.Process.AUID != nil {
+		ev.Labels["auid"] = fmt.Sprintf("%d", *src.ProcessExec.Process.AUID)
 	}
 
 	return ev, nil
@@ -170,9 +185,9 @@ func (n *Normalizer) normalizeProcessExit(data []byte, raw model.RawEnvelope) (m
 
 	proc := &model.ProcessMeta{
 		PID:        src.ProcessExit.Process.PID,
-		TGID:       src.ProcessExit.Process.PID, // 1차 버전에서는 pid 기준으로 둔다
+		TGID:       src.ProcessExit.Process.PID, // 1차 버전: pid 기준
 		UID:        src.ProcessExit.Process.UID,
-		GID:        src.ProcessExit.Process.GID,
+		GID:        derefUint32(src.ProcessExit.Process.GID),
 		Comm:       baseName(src.ProcessExit.Process.Binary),
 		Exe:        src.ProcessExit.Process.Binary,
 		Args:       splitArgs(src.ProcessExit.Process.Arguments),
@@ -186,11 +201,6 @@ func (n *Normalizer) normalizeProcessExit(data []byte, raw model.RawEnvelope) (m
 		proc.PPID = src.ProcessExit.Parent.PID
 		proc.ParentComm = baseName(src.ProcessExit.Parent.Binary)
 		proc.ParentExe = src.ProcessExit.Parent.Binary
-	}
-
-	if src.ProcessExit.Status != nil {
-		code := int32(*src.ProcessExit.Status)
-		proc.ExitCode = &code
 	}
 
 	if !src.ProcessExit.Process.StartTime.IsZero() && !src.Time.IsZero() && src.Time.After(src.ProcessExit.Process.StartTime) {
@@ -208,8 +218,11 @@ func (n *Normalizer) normalizeProcessExit(data []byte, raw model.RawEnvelope) (m
 	if ev.Labels == nil {
 		ev.Labels = map[string]string{}
 	}
-	if src.ProcessExit.Signal != "" {
-		ev.Labels["exit_signal"] = src.ProcessExit.Signal
+	if src.ProcessExit.Process.Flags != "" {
+		ev.Labels["tetragon_flags"] = src.ProcessExit.Process.Flags
+	}
+	if src.ProcessExit.Process.AUID != nil {
+		ev.Labels["auid"] = fmt.Sprintf("%d", *src.ProcessExit.Process.AUID)
 	}
 
 	return ev, nil
@@ -246,8 +259,14 @@ func baseName(path string) string {
 	if path == "" {
 		return ""
 	}
-	parts := strings.Split(path, "/")
-	return parts[len(parts)-1]
+	return filepath.Base(path)
+}
+
+func derefUint32(v *uint32) uint32 {
+	if v == nil {
+		return 0
+	}
+	return *v
 }
 
 func newEventID() (string, error) {
