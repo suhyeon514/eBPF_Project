@@ -165,7 +165,9 @@ func (c *Collector) run(ctx context.Context) {
 			},
 		)
 
-		c.pushEvent(raw)
+		if !c.pushEvent(ctx, raw) {
+			return
+		}
 	}
 }
 
@@ -189,11 +191,12 @@ func trimLine(line []byte) []byte {
 	return []byte(strings.TrimSpace(string(line)))
 }
 
-func (c *Collector) pushEvent(raw model.RawEnvelope) {
+func (c *Collector) pushEvent(ctx context.Context, raw model.RawEnvelope) bool {
 	select {
 	case c.events <- raw:
-	default:
-		c.pushError(fmt.Errorf("tetragon collector events channel is full"))
+		return true
+	case <-ctx.Done():
+		return false
 	}
 }
 
