@@ -1,5 +1,13 @@
-# 비밀번호 파일 제외
+# 비밀번호 및 환경변수 (절대 금지)
 .env
 
-# 도커 볼륨 데이터 제외
-*-data/
+# 가상환경
+venv/
+__pycache__/
+
+# 노드 패키지
+node_modules/
+
+# OS 생성 파일
+.DS_Store
+Thumbs.db

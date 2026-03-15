@@ -5,17 +5,17 @@ services:
     container_name: kafka
     restart: unless-stopped
     environment:
-      - KAFKA_LOG_RETENTION_HOURS=168
+      #- KAFKA_LOG_RETENTION_HOURS=168
       - KAFKA_NODE_ID=1
       - KAFKA_PROCESS_ROLES=broker,controller
       - KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093
-      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092
+      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://localhost:9092
       - KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER
       - KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
       - KAFKA_CONTROLLER_QUORUM_VOTERS=1@kafka:9093
       - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
       - KAFKA_LOG_DIRS=/var/lib/kafka/data
-      - KAFKA_HEAP_OPTS=-Xmx1G -Xms1G
+      #- KAFKA_HEAP_OPTS=-Xmx1G -Xms1G
       - KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT
     volumes:
       - kafka-data:/var/lib/kafka/data
@@ -27,13 +27,15 @@ services:
   opensearch:
     image: opensearchproject/opensearch:2.12.0
     container_name: opensearch
-    restart: unless-stopped
+    #restart: unless-stopped
     environment:
       - cluster.name=security-cluster
       - discovery.type=single-node
-      - bootstrap.memory_lock=true
+      - bootstrap.memory_lock=false
       - "OPENSEARCH_JAVA_OPTS=-Xms1g -Xmx1g"
       - OPENSEARCH_INITIAL_ADMIN_PASSWORD=${OS_ADMIN_PASSWORD} # 변수 처리
+      - DISABLE_INSTALL_DEMO_CONFIG=true 
+      - DISABLE_SECURITY_PLUGIN=true # 로컬 개발 편의를 위해 보안 모드 해제 (선택)
     ulimits:
       memlock: { soft: -1, hard: -1 }
       nofile: { soft: 65536, hard: 65536 }
@@ -44,7 +46,7 @@ services:
     networks:
       - security-net
     healthcheck:
-      test: ["CMD-SHELL", "curl -s -k -u admin:${OS_ADMIN_PASSWORD} https://localhost:9200 | grep -q 'lucene_version' || exit 1"]
+      test: ["CMD-SHELL", "curl -s http://localhost:9200 | grep -q 'lucene_version' || exit 1"]
       interval: 15s
       timeout: 10s
       retries: 10
@@ -72,7 +74,7 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - "6432:5432" #Windows11 관리용 포트와 겹침으로 인해 포트 번호 수정
     networks:
       - security-net
 
