@@ -26,6 +26,13 @@ type Config struct {
 		TailLines int      `yaml:"tail_lines"`
 	} `yaml:"journald"`
 
+	Auditd struct {
+		Enabled      bool          `yaml:"enabled"`
+		LogPath      string        `yaml:"log_path"`
+		PollInterval time.Duration `yaml:"poll_interval"`
+		ReadFromHead bool          `yaml:"read_from_head"`
+	} `yaml:"auditd"`
+
 	Output struct {
 		NormalizedPath string `yaml:"normalized_path"`
 	} `yaml:"output"`
@@ -72,6 +79,24 @@ func Load(path string) (*Config, error) {
 
 	if cfg.Tetragon.PollInterval <= 0 {
 		cfg.Tetragon.PollInterval = 1 * time.Second
+	}
+
+	if cfg.Journald.Enabled {
+		if len(cfg.Journald.Profiles) == 0 {
+			cfg.Journald.Profiles = []string{"sshd", "sudo", "su", "systemd"}
+		}
+		if cfg.Journald.TailLines <= 0 {
+			cfg.Journald.TailLines = 0
+		}
+	}
+
+	if cfg.Auditd.Enabled {
+		if cfg.Auditd.LogPath == "" {
+			cfg.Auditd.LogPath = "/var/log/audit/audit.log"
+		}
+		if cfg.Auditd.PollInterval <= 0 {
+			cfg.Auditd.PollInterval = 1 * time.Second
+		}
 	}
 
 	return &cfg, nil

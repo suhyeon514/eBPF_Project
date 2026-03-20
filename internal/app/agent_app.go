@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 
+	auditdcollector "github.com/suhyeon514/eBPF_Project/internal/collector/auditd"
 	journaldcollector "github.com/suhyeon514/eBPF_Project/internal/collector/journald"
 	tetragoncollector "github.com/suhyeon514/eBPF_Project/internal/collector/tetragon"
 	"github.com/suhyeon514/eBPF_Project/internal/config"
 	"github.com/suhyeon514/eBPF_Project/internal/model"
 	"github.com/suhyeon514/eBPF_Project/internal/normalize"
+	auditdnormalizer "github.com/suhyeon514/eBPF_Project/internal/normalize/auditd"
 	journaldnormalizer "github.com/suhyeon514/eBPF_Project/internal/normalize/journald"
 	tetragonnormalizer "github.com/suhyeon514/eBPF_Project/internal/normalize/tetragon"
 	"github.com/suhyeon514/eBPF_Project/internal/output/jsonl"
@@ -39,6 +41,7 @@ func (a *AgentApp) Run(ctx context.Context) error {
 	router := normalize.NewRouter()
 	router.Register(model.RawSourceTetragon, tetragonnormalizer.New(host))
 	router.Register(model.RawSourceJournald, journaldnormalizer.New(host))
+	router.Register(model.RawSourceAuditd, auditdnormalizer.New(host))
 
 	tetragonCollector := tetragoncollector.New(tetragoncollector.Config{
 		LogPath:      a.cfg.Tetragon.LogPath,
@@ -48,32 +51,67 @@ func (a *AgentApp) Run(ctx context.Context) error {
 		ErrorsBuffer: 32,
 	})
 
-	journaldCollector := journaldcollector.New(journaldcollector.Config{
-		Profiles:     a.cfg.Journald.Profiles,
-		EventsBuffer: 128,
-		ErrorsBuffer: 32,
-		TailLines:    0,
-	})
+	var journaldCollector *journaldcollector.Collector
+	if a.cfg.Journald.Enabled {
+		journaldCollector = journaldcollector.New(journaldcollector.Config{
+			Profiles:     a.cfg.Journald.Profiles,
+			EventsBuffer: 128,
+			ErrorsBuffer: 32,
+			TailLines:    0,
+		})
+	}
+
+	var auditdCollector *auditdcollector.Collector
+	if a.cfg.Auditd.Enabled {
+		auditdCollector = auditdcollector.New(auditdcollector.Config{
+			LogPath:      a.cfg.Auditd.LogPath,
+			PollInterval: a.cfg.Auditd.PollInterval,
+			ReadFromHead: a.cfg.Auditd.ReadFromHead,
+			EventsBuffer: 128,
+			ErrorsBuffer: 32,
+		})
+	}
 
 	if err := tetragonCollector.Start(ctx); err != nil {
 		return fmt.Errorf("start tetragon collector: %w", err)
 	}
 	defer tetragonCollector.Stop(context.Background())
 
-	if err := journaldCollector.Start(ctx); err != nil {
-		return fmt.Errorf("start journald collector: %w", err)
+	if journaldCollector != nil {
+		if err := journaldCollector.Start(ctx); err != nil {
+			return fmt.Errorf("start journald collector: %w", err)
+		}
+		defer journaldCollector.Stop(context.Background())
 	}
-	defer journaldCollector.Stop(context.Background())
+
+	if auditdCollector != nil {
+		if err := auditdCollector.Start(ctx); err != nil {
+			return fmt.Errorf("start auditd collector: %w", err)
+		}
+		defer auditdCollector.Stop(context.Background())
+	}
 
 	tetragonEvents := tetragonCollector.Events()
 	tetragonErrors := tetragonCollector.Errors()
 
-	journaldEvents := journaldCollector.Events()
-	journaldErrors := journaldCollector.Errors()
+	var journaldEvents <-chan model.RawEnvelope
+	var journaldErrors <-chan error
+	if journaldCollector != nil {
+		journaldEvents = journaldCollector.Events()
+		journaldErrors = journaldCollector.Errors()
+	}
+
+	var auditdEvents <-chan model.RawEnvelope
+	var auditdErrors <-chan error
+	if auditdCollector != nil {
+		auditdEvents = auditdCollector.Events()
+		auditdErrors = auditdCollector.Errors()
+	}
 
 	for {
 		if tetragonEvents == nil && tetragonErrors == nil &&
-			journaldEvents == nil && journaldErrors == nil {
+			journaldEvents == nil && journaldErrors == nil &&
+			auditdEvents == nil && auditdErrors == nil {
 			if err := writer.Sync(); err != nil {
 				return fmt.Errorf("sync writer: %w", err)
 			}
@@ -114,6 +152,23 @@ func (a *AgentApp) Run(ctx context.Context) error {
 				continue
 			}
 			fmt.Printf("collector=journald] error=%v\n", err)
+
+		case raw, ok := <-auditdEvents:
+			if !ok {
+				auditdEvents = nil
+				continue
+			}
+
+			if err := a.handleRawEvent(ctx, writer, router, raw); err != nil {
+				return fmt.Errorf("handle auditd raw event: %w", err)
+			}
+
+		case err, ok := <-auditdErrors:
+			if !ok {
+				auditdErrors = nil
+				continue
+			}
+			fmt.Printf("collector=auditd] error=%v\n", err)
 
 		case <-ctx.Done():
 			if err := writer.Sync(); err != nil {
