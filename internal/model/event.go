@@ -15,6 +15,7 @@ const (
 	EventFileModify       EventType = "edr.file.modify"
 	EventAuthSSHLogin     EventType = "edr.auth.ssh_login"
 	EventAuthSudo         EventType = "edr.auth.sudo"
+	EventAuthSU           EventType = "edr.auth.su"
 	EventServiceUnitState EventType = "edr.service.unit_state"
 	EventSensorHealth     EventType = "edr.sensor.health"
 )

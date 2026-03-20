@@ -20,6 +20,12 @@ type Config struct {
 		ReadFromHead bool          `yaml:"read_from_head"`
 	} `yaml:"tetragon"`
 
+	Journald struct {
+		Enabled   bool     `yaml:"enabled"`
+		Profiles  []string `yaml:"profiles"`
+		TailLines int      `yaml:"tail_lines"`
+	} `yaml:"journald"`
+
 	Output struct {
 		NormalizedPath string `yaml:"normalized_path"`
 	} `yaml:"output"`
