@@ -18,6 +18,8 @@ import (
 	nftablesnormalizer "github.com/suhyeon514/eBPF_Project/internal/normalize/nftables"
 	tetragonnormalizer "github.com/suhyeon514/eBPF_Project/internal/normalize/tetragon"
 	"github.com/suhyeon514/eBPF_Project/internal/output/jsonl"
+	nginxcollector "github.com/suhyeon514/eBPF_Project/internal/collector/nginx"
+	nginxnormalizer "github.com/suhyeon514/eBPF_Project/internal/normalize/nginx"
 )
 
 type AgentApp struct {
@@ -50,6 +52,7 @@ func (a *AgentApp) Run(ctx context.Context) error {
 	router.Register(model.RawSourceAuditd, auditdnormalizer.New(host))
 	router.Register(model.RawSourceConntrack, conntracknormalizer.New(host)) // conntrack에 등록
 	router.Register(model.RawSourceNFTables, nftablesnormalizer.New(host))   // nftables에 동일 Normalizer 등록
+	router.Register(model.RawSourceNginx, nginxnormalizer.New(host))
 
 	tetragonCollector := tetragoncollector.New(tetragoncollector.Config{
 		LogPath:      a.cfg.Tetragon.LogPath,
@@ -99,6 +102,12 @@ func (a *AgentApp) Run(ctx context.Context) error {
 			Prefixes:     a.cfg.Nftables.Prefixes,
 		})
 	}
+	var nginxCollector *nginxcollector.Collector
+	if a.cfg.Nginx.Enabled {
+		nginxCollector = nginxcollector.New(nginxcollector.Config{
+			LogPath: a.cfg.Nginx.LogPath,
+		})
+	}
 
 	if err := tetragonCollector.Start(ctx); err != nil {
 		return fmt.Errorf("start tetragon collector: %w", err)
@@ -133,6 +142,13 @@ func (a *AgentApp) Run(ctx context.Context) error {
 		defer nftablesCollector.Stop(context.Background())
 	}
 
+	if nginxCollector != nil {
+		if err := nginxCollector.Start(ctx); err != nil {
+			return fmt.Errorf("start nginx collector: %w", err)
+		}
+		defer nginxCollector.Stop(context.Background())
+	}
+
 	tetragonEvents := tetragonCollector.Events()
 	tetragonErrors := tetragonCollector.Errors()
 
@@ -162,6 +178,13 @@ func (a *AgentApp) Run(ctx context.Context) error {
 	if nftablesCollector != nil {
 		nftablesEvents = nftablesCollector.Events()
 		nftablesErrors = nftablesCollector.Errors()
+	}
+
+	var nginxEvents <-chan model.RawEnvelope
+	var nginxErrors <-chan error
+	if nginxCollector != nil {
+		nginxEvents = nginxCollector.Events()
+		nginxErrors = nginxCollector.Errors()
 	}
 
 	for {
@@ -260,6 +283,22 @@ func (a *AgentApp) Run(ctx context.Context) error {
 			}
 			fmt.Printf("[collector=nftables] error=%v\n", err)
 
+		case raw, ok := <-nginxEvents:
+			if !ok {
+				nginxEvents = nil
+				continue
+			}
+			fmt.Println("🔥 nginx RAW 들어옴") // 디버깅용
+			if err := a.handleRawEvent(ctx, writer, router, raw); err != nil {
+				return fmt.Errorf("handle nginx raw event: %w", err)
+			}
+
+		case err, ok := <-nginxErrors:
+			if !ok {
+				nginxErrors = nil
+				continue
+			}
+			fmt.Printf("[collector=nginx] error=%v\n", err)
 		case <-ctx.Done():
 			if err := writer.Sync(); err != nil {
 				return fmt.Errorf("sync writer: %w", err)

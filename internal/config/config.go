@@ -49,6 +49,10 @@ type Config struct {
 		ReadFromHead bool          `yaml:"read_from_head"`
 	} `yaml:"auditd"`
 
+	Nginx struct {
+		Enabled      bool          `yaml:"enabled"`
+		LogPath      string        `yaml:"log_path"`
+	} `yaml:"nginx"`
 	Output struct {
 		NormalizedPath string `yaml:"normalized_path"`
 	} `yaml:"output"`
