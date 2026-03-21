@@ -8,9 +8,15 @@ const SchemaVersion = "v1"
 type EventType string
 
 const (
-	EventProcessExec      EventType = "edr.process.exec"
-	EventProcessExit      EventType = "edr.process.exit"
-	EventNetConnect       EventType = "edr.net.connect"
+	EventProcessExec EventType = "edr.process.exec"
+	EventProcessExit EventType = "edr.process.exit"
+	EventNetConnect  EventType = "edr.network.connect"
+
+	// 네트워크 (세분화)
+	EventNetSocket   EventType = "edr.network.socket"   // 소켓 생성, 바인딩 (Tetragon eBPF 등)
+	EventNetFlow     EventType = "edr.network.flow"     // 네트워크 세션/흐름 (Conntrack 등)
+	EventNetFirewall EventType = "edr.network.firewall" // 방화벽 허용/차단 (Nftables 등)
+
 	EventFileOpen         EventType = "edr.file.open"
 	EventFileModify       EventType = "edr.file.modify"
 	EventAuthSSHLogin     EventType = "edr.auth.ssh_login"
@@ -77,6 +83,8 @@ type ProcessMeta struct {
 	ExitCode   *int32   `json:"exit_code,omitempty"`
 	DurationMs *uint64  `json:"duration_ms,omitempty"`
 }
+type ConntrackMeta struct {
+}
 
 // 네트워크 이벤트 확장용 구조다.
 type NetworkMeta struct {
@@ -86,6 +94,25 @@ type NetworkMeta struct {
 	DstIP    string `json:"dst_ip,omitempty"`
 	DstPort  uint16 `json:"dst_port,omitempty"`
 	Action   string `json:"action,omitempty"` // connect, drop, reject
+	// // -----------------------------------------------------------
+	// // 2. 고도화된 위협 탐지를 위한 추가 필드 (Tetragon 한계 극복)
+	// // -----------------------------------------------------------
+
+	// // [소켓 레벨 모니터링]
+	// SocketType string `json:"socket_type,omitempty"` // stream, dgram, raw (★BPFdoor는 raw 소켓을 주로 사용함)
+
+	// // [세션 상태 및 트래픽 분석]
+	// Direction  string  `json:"direction,omitempty"`   // inbound, outbound (통신의 방향성)
+	// IsInternal *bool   `json:"is_internal,omitempty"` // 내부망(Lateral Movement) vs 외부망(C2 통신) 구분 (포인터로 선언하여 false/true 명확히 구분)
+	// TxBytes    *uint64 `json:"tx_bytes,omitempty"`    // 전송 바이트 수 (데이터 유출(Exfiltration) 탐지용)
+	// RxBytes    *uint64 `json:"rx_bytes,omitempty"`    // 수신 바이트 수
+
+	// // [L7 및 페이로드 분석]
+	// DNSQuery string `json:"dns_query,omitempty"` // DNS 관련 소켓 행위 시 질의한 도메인
+
+	// // [패킷 헤더 및 시그니처 (매직 패킷 탐지)]
+	TCPFlags string `json:"tcp_flags,omitempty"` // 특정 TCP 플래그 조합 (예: SYN+URG 등 비정상 플래그)
+	// Interface string `json:"interface,omitempty"` // 패킷이 들어온 네트워크 인터페이스 (예: eth0, ens33)
 }
 
 // 파일 이벤트 확장용 구조

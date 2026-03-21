@@ -14,6 +14,7 @@ const (
 	RawSourceAuditd    RawSource = "auditd"
 	RawSourceNFTables  RawSource = "nftables"
 	RawSourceConntrack RawSource = "conntrack"
+	RawSourceNetwork   RawSource = "network"
 )
 
 // collector가 normalizer에 전달하는 공통 원시 이벤트 래퍼

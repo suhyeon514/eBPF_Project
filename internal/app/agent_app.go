@@ -5,13 +5,17 @@ import (
 	"fmt"
 
 	auditdcollector "github.com/suhyeon514/eBPF_Project/internal/collector/auditd"
+	conntrackcollector "github.com/suhyeon514/eBPF_Project/internal/collector/conntrack"
 	journaldcollector "github.com/suhyeon514/eBPF_Project/internal/collector/journald"
+	nftablescollector "github.com/suhyeon514/eBPF_Project/internal/collector/nftables"
 	tetragoncollector "github.com/suhyeon514/eBPF_Project/internal/collector/tetragon"
 	"github.com/suhyeon514/eBPF_Project/internal/config"
 	"github.com/suhyeon514/eBPF_Project/internal/model"
 	"github.com/suhyeon514/eBPF_Project/internal/normalize"
 	auditdnormalizer "github.com/suhyeon514/eBPF_Project/internal/normalize/auditd"
+	conntracknormalizer "github.com/suhyeon514/eBPF_Project/internal/normalize/conntrack"
 	journaldnormalizer "github.com/suhyeon514/eBPF_Project/internal/normalize/journald"
+	nftablesnormalizer "github.com/suhyeon514/eBPF_Project/internal/normalize/nftables"
 	tetragonnormalizer "github.com/suhyeon514/eBPF_Project/internal/normalize/tetragon"
 	"github.com/suhyeon514/eBPF_Project/internal/output/jsonl"
 )
@@ -39,9 +43,13 @@ func (a *AgentApp) Run(ctx context.Context) error {
 	}
 
 	router := normalize.NewRouter()
+
+	// 단일 Normalizer 생성
 	router.Register(model.RawSourceTetragon, tetragonnormalizer.New(host))
 	router.Register(model.RawSourceJournald, journaldnormalizer.New(host))
 	router.Register(model.RawSourceAuditd, auditdnormalizer.New(host))
+	router.Register(model.RawSourceConntrack, conntracknormalizer.New(host)) // conntrack에 등록
+	router.Register(model.RawSourceNFTables, nftablesnormalizer.New(host))   // nftables에 동일 Normalizer 등록
 
 	tetragonCollector := tetragoncollector.New(tetragoncollector.Config{
 		LogPath:      a.cfg.Tetragon.LogPath,
@@ -72,6 +80,26 @@ func (a *AgentApp) Run(ctx context.Context) error {
 		})
 	}
 
+	var conntrackCollector *conntrackcollector.Collector
+	if a.cfg.Conntrack.Enabled {
+		// 💡 수정 1: 실제 conntrack Config 구조체에 맞게 초기화
+		conntrackCollector = conntrackcollector.New(conntrackcollector.Config{
+			Args:          a.cfg.Conntrack.Args,
+			RestartOnExit: a.cfg.Conntrack.RestartOnExit,
+			RestartDelay:  a.cfg.Conntrack.RestartDelay,
+		})
+	}
+
+	var nftablesCollector *nftablescollector.Collector
+	if a.cfg.Nftables.Enabled {
+		nftablesCollector = nftablescollector.New(nftablescollector.Config{
+			LogPath:      a.cfg.Nftables.LogPath,
+			PollInterval: a.cfg.Nftables.PollInterval,
+			ReadFromHead: a.cfg.Nftables.ReadFromHead,
+			Prefixes:     a.cfg.Nftables.Prefixes,
+		})
+	}
+
 	if err := tetragonCollector.Start(ctx); err != nil {
 		return fmt.Errorf("start tetragon collector: %w", err)
 	}
@@ -91,6 +119,20 @@ func (a *AgentApp) Run(ctx context.Context) error {
 		defer auditdCollector.Stop(context.Background())
 	}
 
+	if conntrackCollector != nil {
+		if err := conntrackCollector.Start(ctx); err != nil {
+			return fmt.Errorf("start conntrack collector: %w", err)
+		}
+		defer conntrackCollector.Stop(context.Background())
+	}
+
+	if nftablesCollector != nil {
+		if err := nftablesCollector.Start(ctx); err != nil {
+			return fmt.Errorf("start nftables collector: %w", err)
+		}
+		defer nftablesCollector.Stop(context.Background())
+	}
+
 	tetragonEvents := tetragonCollector.Events()
 	tetragonErrors := tetragonCollector.Errors()
 
@@ -106,6 +148,20 @@ func (a *AgentApp) Run(ctx context.Context) error {
 	if auditdCollector != nil {
 		auditdEvents = auditdCollector.Events()
 		auditdErrors = auditdCollector.Errors()
+	}
+
+	var conntrackEvents <-chan model.RawEnvelope
+	var conntrackErrors <-chan error
+	if conntrackCollector != nil {
+		conntrackEvents = conntrackCollector.Events()
+		conntrackErrors = conntrackCollector.Errors()
+	}
+
+	var nftablesEvents <-chan model.RawEnvelope
+	var nftablesErrors <-chan error
+	if nftablesCollector != nil {
+		nftablesEvents = nftablesCollector.Events()
+		nftablesErrors = nftablesCollector.Errors()
 	}
 
 	for {
@@ -169,6 +225,40 @@ func (a *AgentApp) Run(ctx context.Context) error {
 				continue
 			}
 			fmt.Printf("collector=auditd] error=%v\n", err)
+
+		case raw, ok := <-conntrackEvents:
+			if !ok {
+				conntrackEvents = nil
+				continue
+			}
+
+			if err := a.handleRawEvent(ctx, writer, router, raw); err != nil {
+				return fmt.Errorf("handle conntrack raw event: %w", err)
+			}
+
+		case err, ok := <-conntrackErrors:
+			if !ok {
+				conntrackErrors = nil
+				continue
+			}
+			fmt.Printf("[collector=conntrack] error=%v\n", err)
+
+		case raw, ok := <-nftablesEvents:
+			if !ok {
+				nftablesEvents = nil
+				continue
+			}
+
+			if err := a.handleRawEvent(ctx, writer, router, raw); err != nil {
+				return fmt.Errorf("handle nftables raw event: %w", err)
+			}
+
+		case err, ok := <-nftablesErrors:
+			if !ok {
+				nftablesErrors = nil
+				continue
+			}
+			fmt.Printf("[collector=nftables] error=%v\n", err)
 
 		case <-ctx.Done():
 			if err := writer.Sync(); err != nil {

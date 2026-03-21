@@ -8,6 +8,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// yaml 파일에서 선언한 설정 구조체 정의
 type Config struct {
 	HostID   string `yaml:"host_id"`
 	Hostname string `yaml:"hostname"`
@@ -25,6 +26,21 @@ type Config struct {
 		Profiles  []string `yaml:"profiles"`
 		TailLines int      `yaml:"tail_lines"`
 	} `yaml:"journald"`
+
+	Conntrack struct {
+		Enabled       bool          `yaml:"enabled"`
+		Args          []string      `yaml:"args"`
+		RestartOnExit bool          `yaml:"restart_on_exit"`
+		RestartDelay  time.Duration `yaml:"restart_delay"`
+	} `yaml:"conntrack"`
+
+	Nftables struct {
+		Enabled      bool          `yaml:"enabled"`
+		LogPath      string        `yaml:"log_path"`
+		PollInterval time.Duration `yaml:"poll_interval"`
+		ReadFromHead bool          `yaml:"read_from_head"`
+		Prefixes     []string      `yaml:"prefixes"`
+	} `yaml:"nftables"`
 
 	Auditd struct {
 		Enabled      bool          `yaml:"enabled"`
