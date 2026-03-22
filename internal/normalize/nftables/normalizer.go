@@ -14,8 +14,8 @@ import (
 	"github.com/suhyeon514/eBPF_Project/internal/model"
 )
 
-// Nftables 방화벽 차단 로그 패턴
-var nftablesRegex = regexp.MustCompile(`(NFT_[A-Z_]+).*?SRC=([^\s]+)\s+DST=([^\s]+).*?PROTO=([A-Z]+)\s+SPT=([0-9]+)\s+DPT=([0-9]+)(.*?RES=0x[0-9a-fA-F]+\s+([A-Z\s]+)\s+URGP)?`)
+// 기존 nftablesRegex 변수를 아래 코드로 완전히 교체합니다.
+var nftablesRegex = regexp.MustCompile(`(NFT_[A-Z_]+|IPTABLES_[A-Z_]+|\[UFW [A-Z_]+\]).*?SRC=([^\s]+)\s+DST=([^\s]+).*?PROTO=([A-Z]+)\s+SPT=([0-9]+)\s+DPT=([0-9]+)(.*?RES=0x[0-9a-fA-F]+\s+([A-Z\s]+)\s+URGP)?`)
 
 type Normalizer struct {
 	host model.HostMeta
@@ -61,12 +61,26 @@ func (n *Normalizer) normalizeEvent(line string, raw model.RawEnvelope) *model.E
 	}
 
 	netMeta := &model.NetworkMeta{}
-
 	rawAction := matches[1]
-	if strings.Contains(rawAction, "DROP") {
+
+	// 💡 1. 여기서 원본 액션 문자열을 보고 방화벽 종류(Name)를 판별합니다.
+	collectorName := "firewall" // 기본값
+	if strings.HasPrefix(rawAction, "NFT_") {
+		collectorName = "nftables"
+	} else if strings.HasPrefix(rawAction, "IPTABLES_") {
+		collectorName = "iptables"
+	} else if strings.Contains(rawAction, "UFW") {
+		collectorName = "ufw"
+	}
+
+	if strings.Contains(rawAction, "DROP") || strings.Contains(rawAction, "BLOCK") {
 		netMeta.Action = "drop"
+	} else if strings.Contains(rawAction, "ACCEPT") || strings.Contains(rawAction, "ALLOW") {
+		netMeta.Action = "accept" // 정상 허용
+	} else if strings.Contains(rawAction, "REJECT") {
+		netMeta.Action = "reject" // 명시적 거절
 	} else {
-		netMeta.Action = "reject"
+		netMeta.Action = "log" // TRACE, AUDIT 등 단순 기록용
 	}
 
 	netMeta.SrcIP = matches[2]
@@ -92,7 +106,8 @@ func (n *Normalizer) normalizeEvent(line string, raw model.RawEnvelope) *model.E
 		model.EventNetFirewall, // 방화벽 차단도 넓은 의미의 네트워크 이벤트로 분류
 		eventTime,
 		n.host,
-		n.collectorMeta(),
+		// n.collectorMeta(),
+		n.dynamicCollectorMeta(collectorName),
 	)
 
 	ev.Network = netMeta
@@ -105,10 +120,18 @@ func (n *Normalizer) normalizeEvent(line string, raw model.RawEnvelope) *model.E
 // 헬퍼 함수들 (Conntrack/Journald와 동일)
 // -----------------------------------------------------------------------------
 
-func (n *Normalizer) collectorMeta() model.CollectorMeta {
+// func (n *Normalizer) collectorMeta() model.CollectorMeta {
+// 	return model.CollectorMeta{
+// 		Name:       "nftables",
+// 		SourceType: "firewall",
+// 	}
+// }
+
+// 💡 기존의 고정된 collectorMeta() 대신, name을 인자로 받는 함수로 변경합니다.
+func (n *Normalizer) dynamicCollectorMeta(name string) model.CollectorMeta {
 	return model.CollectorMeta{
-		Name:       "nftables",
-		SourceType: "firewall",
+		Name:       name,       // "nftables", "iptables", "ufw" 중 하나가 들어감
+		SourceType: "firewall", // 분류 카테고리는 firewall로 통일
 	}
 }
 
