@@ -8,6 +8,7 @@ import (
 	conntrackcollector "github.com/suhyeon514/eBPF_Project/internal/collector/conntrack"
 	journaldcollector "github.com/suhyeon514/eBPF_Project/internal/collector/journald"
 	nftablescollector "github.com/suhyeon514/eBPF_Project/internal/collector/nftables"
+	nginxcollector "github.com/suhyeon514/eBPF_Project/internal/collector/nginx"
 	tetragoncollector "github.com/suhyeon514/eBPF_Project/internal/collector/tetragon"
 	"github.com/suhyeon514/eBPF_Project/internal/config"
 	"github.com/suhyeon514/eBPF_Project/internal/model"
@@ -16,10 +17,9 @@ import (
 	conntracknormalizer "github.com/suhyeon514/eBPF_Project/internal/normalize/conntrack"
 	journaldnormalizer "github.com/suhyeon514/eBPF_Project/internal/normalize/journald"
 	nftablesnormalizer "github.com/suhyeon514/eBPF_Project/internal/normalize/nftables"
+	nginxnormalizer "github.com/suhyeon514/eBPF_Project/internal/normalize/nginx"
 	tetragonnormalizer "github.com/suhyeon514/eBPF_Project/internal/normalize/tetragon"
 	"github.com/suhyeon514/eBPF_Project/internal/output/jsonl"
-	nginxcollector "github.com/suhyeon514/eBPF_Project/internal/collector/nginx"
-	nginxnormalizer "github.com/suhyeon514/eBPF_Project/internal/normalize/nginx"
 )
 
 type AgentApp struct {
@@ -317,6 +317,10 @@ func (a *AgentApp) handleRawEvent(
 	events, err := router.Normalize(ctx, raw)
 	if err != nil {
 		return fmt.Errorf("normalize source=%s: %w", raw.Source, err)
+	}
+
+	for i := range events {
+		events[i].RouteTopic = routeTopic(events[i])
 	}
 
 	if err := writeEvents(writer, events); err != nil {

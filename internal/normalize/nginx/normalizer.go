@@ -50,7 +50,8 @@ func (n *Normalizer) Normalize(_ context.Context, raw model.RawEnvelope) ([]mode
 	// 🔥 이벤트 생성
 	ev := model.NewEvent(
 		mustEventID(),
-		model.EventType("web_access"),
+		// model.EventType("web.access"),
+		model.EventWebAccess,
 		time.Now().UTC(),
 		n.host,
 		model.CollectorMeta{
