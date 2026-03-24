@@ -2,8 +2,6 @@ package nftables
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"regexp"
@@ -102,7 +100,7 @@ func (n *Normalizer) normalizeEvent(line string, raw model.RawEnvelope) *model.E
 	}
 
 	ev := model.NewEvent(
-		mustEventID(),
+		model.NewEventID(),
 		model.EventNetFirewall, // 방화벽 차단도 넓은 의미의 네트워크 이벤트로 분류
 		eventTime,
 		n.host,
@@ -115,17 +113,6 @@ func (n *Normalizer) normalizeEvent(line string, raw model.RawEnvelope) *model.E
 
 	return &ev
 }
-
-// -----------------------------------------------------------------------------
-// 헬퍼 함수들 (Conntrack/Journald와 동일)
-// -----------------------------------------------------------------------------
-
-// func (n *Normalizer) collectorMeta() model.CollectorMeta {
-// 	return model.CollectorMeta{
-// 		Name:       "nftables",
-// 		SourceType: "firewall",
-// 	}
-// }
 
 // 💡 기존의 고정된 collectorMeta() 대신, name을 인자로 받는 함수로 변경합니다.
 func (n *Normalizer) dynamicCollectorMeta(name string) model.CollectorMeta {
@@ -165,20 +152,4 @@ func extractLine(payload any) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("unsupported nftables payload type or missing 'line' key: %T", payload)
-}
-
-func mustEventID() string {
-	id, err := newEventID()
-	if err != nil {
-		return fmt.Sprintf("fallback-%d", time.Now().UTC().UnixNano())
-	}
-	return id
-}
-
-func newEventID() (string, error) {
-	var b [8]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("%d-%s", time.Now().UTC().UnixNano(), hex.EncodeToString(b[:])), nil
 }

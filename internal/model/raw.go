@@ -14,9 +14,8 @@ const (
 	RawSourceNFTables  RawSource = "nftables"
 	RawSourceConntrack RawSource = "conntrack"
 	RawSourceNetwork   RawSource = "network"
-
-	// 🔥 추가
-	RawSourceNginx RawSource = "nginx"
+	RawSourceNginx     RawSource = "nginx"
+	RawSourceHealth    RawSource = "health"
 )
 
 type RawEnvelope struct {

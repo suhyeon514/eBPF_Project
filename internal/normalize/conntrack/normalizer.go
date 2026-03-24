@@ -2,8 +2,6 @@ package conntrack
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"regexp"
@@ -83,7 +81,7 @@ func (n *Normalizer) normalizeEvent(line string, raw model.RawEnvelope) *model.E
 	}
 
 	ev := model.NewEvent(
-		mustEventID(),
+		model.NewEventID(),
 		model.EventNetFlow,
 		eventTime,
 		n.host,
@@ -154,22 +152,6 @@ func parsePort(portStr string) uint16 {
 		return 0
 	}
 	return uint16(port)
-}
-
-func mustEventID() string {
-	id, err := newEventID()
-	if err != nil {
-		return fmt.Sprintf("fallback-%d", time.Now().UTC().UnixNano())
-	}
-	return id
-}
-
-func newEventID() (string, error) {
-	var b [8]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("%d-%s", time.Now().UTC().UnixNano(), hex.EncodeToString(b[:])), nil
 }
 
 // -----------------------------------------------------------------------------

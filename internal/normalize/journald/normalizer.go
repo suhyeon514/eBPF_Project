@@ -2,8 +2,6 @@ package journald
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"regexp"
@@ -82,7 +80,7 @@ func (n *Normalizer) normalizeSudo(e journalEntry, raw model.RawEnvelope) []mode
 	// sudo COMMAND 로그
 	if m := sudoCommandRe.FindStringSubmatch(msg); len(m) == 4 {
 		ev := model.NewEvent(
-			mustEventID(),
+			model.NewEventID(),
 			model.EventAuthSudo,
 			eventTime,
 			host,
@@ -105,7 +103,7 @@ func (n *Normalizer) normalizeSudo(e journalEntry, raw model.RawEnvelope) []mode
 	// sudo session opened
 	if m := sudoSessionOpenRe.FindStringSubmatch(msg); len(m) == 3 {
 		ev := model.NewEvent(
-			mustEventID(),
+			model.NewEventID(),
 			model.EventAuthSudo,
 			eventTime,
 			host,
@@ -127,7 +125,7 @@ func (n *Normalizer) normalizeSudo(e journalEntry, raw model.RawEnvelope) []mode
 	// sudo session closed
 	if m := sudoSessionCloseRe.FindStringSubmatch(msg); len(m) == 2 {
 		ev := model.NewEvent(
-			mustEventID(),
+			model.NewEventID(),
 			model.EventAuthSudo,
 			eventTime,
 			host,
@@ -160,7 +158,7 @@ func (n *Normalizer) normalizeSU(e journalEntry, raw model.RawEnvelope) []model.
 	// FAILED SU (to root) [user] on pts/2
 	if m := suFailedRe.FindStringSubmatch(msg); len(m) == 3 {
 		ev := model.NewEvent(
-			mustEventID(),
+			model.NewEventID(),
 			model.EventAuthSU,
 			eventTime,
 			host,
@@ -182,7 +180,7 @@ func (n *Normalizer) normalizeSU(e journalEntry, raw model.RawEnvelope) []model.
 	// pam_unix(su:auth): authentication failure ... user=root
 	if m := suPamAuthFailRe.FindStringSubmatch(msg); len(m) == 2 {
 		ev := model.NewEvent(
-			mustEventID(),
+			model.NewEventID(),
 			model.EventAuthSU,
 			eventTime,
 			host,
@@ -203,7 +201,7 @@ func (n *Normalizer) normalizeSU(e journalEntry, raw model.RawEnvelope) []model.
 	// (to root) [user] on pts/2
 	if m := suSuccessRe.FindStringSubmatch(msg); len(m) == 3 {
 		ev := model.NewEvent(
-			mustEventID(),
+			model.NewEventID(),
 			model.EventAuthSU,
 			eventTime,
 			host,
@@ -225,7 +223,7 @@ func (n *Normalizer) normalizeSU(e journalEntry, raw model.RawEnvelope) []model.
 	// session opened
 	if m := suSessionOpenRe.FindStringSubmatch(msg); len(m) == 3 {
 		ev := model.NewEvent(
-			mustEventID(),
+			model.NewEventID(),
 			model.EventAuthSU,
 			eventTime,
 			host,
@@ -247,7 +245,7 @@ func (n *Normalizer) normalizeSU(e journalEntry, raw model.RawEnvelope) []model.
 	// session closed
 	if m := suSessionCloseRe.FindStringSubmatch(msg); len(m) == 2 {
 		ev := model.NewEvent(
-			mustEventID(),
+			model.NewEventID(),
 			model.EventAuthSU,
 			eventTime,
 			host,
@@ -280,7 +278,7 @@ func (n *Normalizer) normalizeSSHD(e journalEntry, raw model.RawEnvelope) []mode
 	// Accepted password for [user] from [ip] port [port] ssh2
 	if m := sshAcceptedRe.FindStringSubmatch(msg); len(m) == 3 {
 		ev := model.NewEvent(
-			mustEventID(),
+			model.NewEventID(),
 			model.EventAuthSSHLogin,
 			eventTime,
 			host,
@@ -302,7 +300,7 @@ func (n *Normalizer) normalizeSSHD(e journalEntry, raw model.RawEnvelope) []mode
 	// pam_unix(sshd:session): session opened for user [user](uid=1000) by (uid=0)
 	if m := sshSessionOpenRe.FindStringSubmatch(msg); len(m) == 3 {
 		ev := model.NewEvent(
-			mustEventID(),
+			model.NewEventID(),
 			model.EventAuthSSHLogin,
 			eventTime,
 			host,
@@ -324,7 +322,7 @@ func (n *Normalizer) normalizeSSHD(e journalEntry, raw model.RawEnvelope) []mode
 	// Received disconnect from [ip] port [port]:11: disconnected by user
 	if m := sshReceivedDisconnectRe.FindStringSubmatch(msg); len(m) == 2 {
 		ev := model.NewEvent(
-			mustEventID(),
+			model.NewEventID(),
 			model.EventAuthSSHLogin,
 			eventTime,
 			host,
@@ -344,7 +342,7 @@ func (n *Normalizer) normalizeSSHD(e journalEntry, raw model.RawEnvelope) []mode
 	// Disconnected from user [user] [ip] port [port]
 	if m := sshDisconnectedUserRe.FindStringSubmatch(msg); len(m) == 3 {
 		ev := model.NewEvent(
-			mustEventID(),
+			model.NewEventID(),
 			model.EventAuthSSHLogin,
 			eventTime,
 			host,
@@ -365,7 +363,7 @@ func (n *Normalizer) normalizeSSHD(e journalEntry, raw model.RawEnvelope) []mode
 	// pam_unix(sshd:session): session closed for user jeong
 	if m := sshSessionCloseRe.FindStringSubmatch(msg); len(m) == 2 {
 		ev := model.NewEvent(
-			mustEventID(),
+			model.NewEventID(),
 			model.EventAuthSSHLogin,
 			eventTime,
 			host,
@@ -402,7 +400,7 @@ func (n *Normalizer) normalizeSystemd(e journalEntry, raw model.RawEnvelope) []m
 			unitName = strings.TrimSpace(m[1])
 		}
 		ev := model.NewEvent(
-			mustEventID(),
+			model.NewEventID(),
 			model.EventServiceUnitState,
 			eventTime,
 			host,
@@ -423,7 +421,7 @@ func (n *Normalizer) normalizeSystemd(e journalEntry, raw model.RawEnvelope) []m
 	// Started / Stopped ...
 	if strings.HasPrefix(msg, "Started ") {
 		ev := model.NewEvent(
-			mustEventID(),
+			model.NewEventID(),
 			model.EventServiceUnitState,
 			eventTime,
 			host,
@@ -440,7 +438,7 @@ func (n *Normalizer) normalizeSystemd(e journalEntry, raw model.RawEnvelope) []m
 
 	if strings.HasPrefix(msg, "Stopped ") {
 		ev := model.NewEvent(
-			mustEventID(),
+			model.NewEventID(),
 			model.EventServiceUnitState,
 			eventTime,
 			host,
@@ -509,22 +507,6 @@ func parseJournalRealtime(ts string) time.Time {
 
 	// fallback
 	return time.Now().UTC()
-}
-
-func mustEventID() string {
-	id, err := newEventID()
-	if err != nil {
-		return fmt.Sprintf("fallback-%d", time.Now().UTC().UnixNano())
-	}
-	return id
-}
-
-func newEventID() (string, error) {
-	var b [8]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("%d-%s", time.Now().UTC().UnixNano(), hex.EncodeToString(b[:])), nil
 }
 
 var (

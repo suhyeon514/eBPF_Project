@@ -2,8 +2,6 @@ package tetragon
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"path/filepath"
@@ -95,10 +93,10 @@ func (n *Normalizer) normalizeProcessExec(data []byte, raw model.RawEnvelope) (m
 		return model.Event{}, fmt.Errorf("unmarshal tetragon process_exec: %w", err)
 	}
 
-	eventID, err := newEventID()
-	if err != nil {
-		return model.Event{}, err
-	}
+	// eventID, err := newEventID()
+	// if err != nil {
+	// 	return model.Event{}, err
+	// }
 
 	host := n.host
 	if host.Hostname == "" && src.NodeName != "" {
@@ -106,7 +104,7 @@ func (n *Normalizer) normalizeProcessExec(data []byte, raw model.RawEnvelope) (m
 	}
 
 	ev := model.NewEvent(
-		eventID,
+		model.NewEventID(),
 		model.EventProcessExec,
 		src.Time.UTC(),
 		host,
@@ -162,10 +160,10 @@ func (n *Normalizer) normalizeProcessExit(data []byte, raw model.RawEnvelope) (m
 		return model.Event{}, fmt.Errorf("unmarshal tetragon process_exit: %w", err)
 	}
 
-	eventID, err := newEventID()
-	if err != nil {
-		return model.Event{}, err
-	}
+	// eventID, err := newEventID()
+	// if err != nil {
+	// 	return model.Event{}, err
+	// }
 
 	host := n.host
 	if host.Hostname == "" && src.NodeName != "" {
@@ -173,7 +171,7 @@ func (n *Normalizer) normalizeProcessExit(data []byte, raw model.RawEnvelope) (m
 	}
 
 	ev := model.NewEvent(
-		eventID,
+		model.NewEventID(),
 		model.EventProcessExit,
 		src.Time.UTC(),
 		host,
@@ -269,10 +267,10 @@ func derefUint32(v *uint32) uint32 {
 	return *v
 }
 
-func newEventID() (string, error) {
-	var b [8]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return "", fmt.Errorf("generate event id: %w", err)
-	}
-	return fmt.Sprintf("%d-%s", time.Now().UTC().UnixNano(), hex.EncodeToString(b[:])), nil
-}
+// func newEventID() (string, error) {
+// 	var b [8]byte
+// 	if _, err := rand.Read(b[:]); err != nil {
+// 		return "", fmt.Errorf("generate event id: %w", err)
+// 	}
+// 	return fmt.Sprintf("%d-%s", time.Now().UTC().UnixNano(), hex.EncodeToString(b[:])), nil
+// }

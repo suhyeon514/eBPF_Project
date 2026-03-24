@@ -2,7 +2,6 @@ package auditd
 
 import (
 	"context"
-	"crypto/rand"
 	"encoding/hex"
 	"fmt"
 	"strconv"
@@ -97,7 +96,7 @@ func (n *Normalizer) normalizeUserCmd(rec auditRecord, raw model.RawEnvelope) *m
 	cmd := decodeHexOrRaw(cmdHex)
 
 	ev := model.NewEvent(
-		mustEventID(),
+		model.NewEventID(),
 		eventType,
 		rec.EventTime,
 		n.host,
@@ -155,7 +154,7 @@ func (n *Normalizer) normalizeUserSession(rec auditRecord, raw model.RawEnvelope
 	}
 
 	ev := model.NewEvent(
-		mustEventID(),
+		model.NewEventID(),
 		eventType,
 		rec.EventTime,
 		n.host,
@@ -207,7 +206,7 @@ func (n *Normalizer) normalizeService(rec auditRecord, raw model.RawEnvelope) *m
 	}
 
 	ev := model.NewEvent(
-		mustEventID(),
+		model.NewEventID(),
 		model.EventServiceUnitState,
 		rec.EventTime,
 		n.host,
@@ -230,7 +229,7 @@ func (n *Normalizer) normalizeConfig(rec auditRecord, raw model.RawEnvelope) *mo
 	}
 
 	ev := model.NewEvent(
-		mustEventID(),
+		model.NewEventID(),
 		model.EventSensorHealth,
 		rec.EventTime,
 		n.host,
@@ -484,20 +483,4 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
-}
-
-func mustEventID() string {
-	id, err := newEventID()
-	if err != nil {
-		return fmt.Sprintf("fallback-%d", time.Now().UTC().UnixNano())
-	}
-	return id
-}
-
-func newEventID() (string, error) {
-	var b [8]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("%d-%s", time.Now().UTC().UnixNano(), hex.EncodeToString(b[:])), nil
 }

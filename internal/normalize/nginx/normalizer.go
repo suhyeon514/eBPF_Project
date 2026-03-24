@@ -2,9 +2,6 @@ package nginx
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
-	"fmt"
 	"regexp"
 	"strings"
 	"time"
@@ -49,7 +46,7 @@ func (n *Normalizer) Normalize(_ context.Context, raw model.RawEnvelope) ([]mode
 
 	// 🔥 이벤트 생성
 	ev := model.NewEvent(
-		mustEventID(),
+		model.NewEventID(),
 		// model.EventType("web.access"),
 		model.EventWebAccess,
 		time.Now().UTC(),
@@ -77,24 +74,4 @@ func (n *Normalizer) Normalize(_ context.Context, raw model.RawEnvelope) ([]mode
 	}
 
 	return []model.Event{ev}, nil
-}
-
-////////////////////////////////////////////////////////////
-// 🔧 헬퍼 함수
-////////////////////////////////////////////////////////////
-
-func mustEventID() string {
-	id, err := newEventID()
-	if err != nil {
-		return fmt.Sprintf("fallback-%d", time.Now().UTC().UnixNano())
-	}
-	return id
-}
-
-func newEventID() (string, error) {
-	var b [8]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("%d-%s", time.Now().UTC().UnixNano(), hex.EncodeToString(b[:])), nil
 }

@@ -86,8 +86,6 @@ type ProcessMeta struct {
 	ExitCode   *int32   `json:"exit_code,omitempty"`
 	DurationMs *uint64  `json:"duration_ms,omitempty"`
 }
-type ConntrackMeta struct {
-}
 
 // 네트워크 이벤트 확장용 구조다.
 type NetworkMeta struct {
