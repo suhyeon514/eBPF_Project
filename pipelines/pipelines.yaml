@@ -1,30 +1,121 @@
-# ~/analysis-server/pipelines/pipelines.yaml
 version: "2"
 
-edr-log-pipeline:
+# 1. Tetragon Process
+tetragon-process-pipeline:
   source:
     kafka:
-      bootstrap_servers: ["kafka:9092"]
-      encryption:
-        type: "none"
-      topics:
-        - name: "security-logs"
-          group_id: "edr-analysis-group"
-
+      bootstrap_servers: ["kafka:29092"]
+      encryption: { type: "none" }
+      topics: [{name: "tetragon.process", group_id: "edr-v8-process"}]
   processor:
-    - date:
-        from_time_received: true
-        destination: "@timestamp"
-    - add_entries:
-        entries:
-          - key: "processed_by"
-            value: "data-prepper-node"
-
+    - parse_json: { source: "message" }
   sink:
     - opensearch:
-        hosts: ["https://opensearch:9200"]
-        username: "admin"
-        # [수정] 아래와 같이 변수로 작성하면 docker-compose가 .env의 값을 주입합니다.
-        password: "${OS_ADMIN_PASSWORD}" 
+        hosts: ["http://opensearch:9200"] # 로컬 보안 비활성화로 http 사용
         insecure: true
-        index: "security-logs-%{yyyy.MM.dd}"
+        index: "security-tetragon.process-%{yyyy.MM.dd}"
+
+# 2. Tetragon Network
+tetragon-network-pipeline:
+  source:
+    kafka:
+      bootstrap_servers: ["kafka:29092"]
+      encryption: { type: "none" }
+      topics: [{name: "tetragon.network", group_id: "edr-v8-network"}]
+  processor:
+    - parse_json: { source: "message" }
+  sink:
+    - opensearch:
+        hosts: ["http://opensearch:9200"]
+        insecure: true
+        index: "security-tetragon.network-%{yyyy.MM.dd}"
+
+# 3. Tetragon File
+tetragon-file-pipeline:
+  source:
+    kafka:
+      bootstrap_servers: ["kafka:29092"]
+      encryption: { type: "none" }
+      topics: [{name: "tetragon.file", group_id: "edr-v8-file"}]
+  processor:
+    - parse_json: { source: "message" }
+  sink:
+    - opensearch:
+        hosts: ["http://opensearch:9200"]
+        insecure: true
+        index: "security-tetragon.file-%{yyyy.MM.dd}"
+
+# 4. Tetragon Auth
+tetragon-auth-pipeline:
+  source:
+    kafka:
+      bootstrap_servers: ["kafka:29092"]
+      encryption: { type: "none" }
+      topics: [{name: "tetragon.auth", group_id: "edr-v8-auth"}]
+  processor:
+    - parse_json: { source: "message" }
+  sink:
+    - opensearch:
+        hosts: ["http://opensearch:9200"]
+        insecure: true
+        index: "security-tetragon.auth-%{yyyy.MM.dd}"
+
+# 5. Linux Network (network)
+network-pipeline:
+  source:
+    kafka:
+      bootstrap_servers: ["kafka:29092"]
+      encryption: { type: "none" }
+      topics: [{name: "network", group_id: "edr-v8-net"}]
+  processor:
+    - parse_json: { source: "message" }
+  sink:
+    - opensearch:
+        hosts: ["http://opensearch:9200"]
+        insecure: true
+        index: "security-network-%{yyyy.MM.dd}"
+
+# 6. Journald
+journald-pipeline:
+  source:
+    kafka:
+      bootstrap_servers: ["kafka:29092"]
+      encryption: { type: "none" }
+      topics: [{name: "journald", group_id: "edr-v8-journald"}]
+  processor:
+    - parse_json: { source: "message" }
+  sink:
+    - opensearch:
+        hosts: ["http://opensearch:9200"]
+        insecure: true
+        index: "security-journald-%{yyyy.MM.dd}"
+
+# 7. Auditd
+auditd-pipeline:
+  source:
+    kafka:
+      bootstrap_servers: ["kafka:29092"]
+      encryption: { type: "none" }
+      topics: [{name: "auditd", group_id: "edr-v8-auditd"}]
+  processor:
+    - parse_json: { source: "message" }
+  sink:
+    - opensearch:
+        hosts: ["http://opensearch:9200"]
+        insecure: true
+        index: "security-auditd-%{yyyy.MM.dd}"
+
+# 8. Sensor Logs
+sensor-pipeline:
+  source:
+    kafka:
+      bootstrap_servers: ["kafka:29092"]
+      encryption: { type: "none" }
+      topics: [{name: "sensor", group_id: "edr-v8-sensor"}]
+  processor:
+    - parse_json: { source: "message" }
+  sink:
+    - opensearch:
+        hosts: ["http://opensearch:9200"]
+        insecure: true
+        index: "security-sensor-%{yyyy.MM.dd}"

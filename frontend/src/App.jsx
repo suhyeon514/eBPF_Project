@@ -1,42 +1,38 @@
-import { useState, useEffect } from 'react'
-import axios from 'axios'
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import MainLayout from './layouts/MainLayout';
+import Dashboard from './pages/Dashboard'; // 기존 App.jsx의 내용을 이쪽으로 옮깁니다.
+import { useState, useEffect } from 'react';
+import Login from './components/Login';
+import Assets from './pages/Assets';
 
 function App() {
-  const [health, setHealth] = useState({ postgresql: '🟡 확인 중...', opensearch: '🟡 확인 중...' })
+  const [user, setUser] = useState(null);
 
   useEffect(() => {
-    // 3초마다 자동으로 서버 상태를 체크합니다.
-    const checkHealth = () => {
-      axios.get('/api/health')
-        .then(res => setHealth(res.data))
-        .catch(() => setHealth({ postgresql: '🔴 서버 꺼짐', opensearch: '🔴 서버 꺼짐' }))
-    }
+    const savedUser = localStorage.getItem('ebpf_user');
+    if (savedUser) setUser(JSON.parse(savedUser));
+  }, []);
 
-    checkHealth()
-    const timer = setInterval(checkHealth, 3000)
-    return () => clearInterval(timer)
-  }, [])
+  const handleLoginSuccess = (userData) => {
+    setUser(userData);
+    localStorage.setItem('ebpf_user', JSON.stringify(userData));
+  };
 
   return (
-    <div style={{ padding: '40px', textAlign: 'center', backgroundColor: '#f8f9fa', minHeight: '100vh' }}>
-      <h1>🛡️ eBPF Security Monitor</h1>
-      <p>실시간 인프라 연동 상태</p>
-      
-      <div style={{ display: 'flex', justifyContent: 'center', gap: '20px', marginTop: '30px' }}>
-        <StatusCard title="관리용 DB (PostgreSQL)" status={health.postgresql} />
-        <StatusCard title="로그 저장소 (OpenSearch)" status={health.opensearch} />
-      </div>
-    </div>
-  )
+    <BrowserRouter>
+      <Routes>
+        {/* 로그인이 안 되어 있으면 /login으로 이동, 되어 있으면 대시보드 표시 */}
+        <Route path="/login" element={!user ? <Login onLoginSuccess={handleLoginSuccess} /> : <Navigate to="/" />} />
+        
+        {/* 메인 레이아웃 적용 구역 */}
+        <Route element={user ? <MainLayout /> : <Navigate to="/login" />}>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/assets" element={<Assets />} /> 
+          <Route path="/analysis" element={<div>프로세스 분석 준비 중</div>} />
+          {/* ... 나머지 페이지들 */}
+        </Route>
+      </Routes>
+    </BrowserRouter>
+  );
 }
-
-function StatusCard({ title, status }) {
-  return (
-    <div style={{ padding: '20px', border: '1px solid #ddd', borderRadius: '12px', backgroundColor: 'white', width: '250px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}>
-      <h4>{title}</h4>
-      <p style={{ fontSize: '1.2rem', fontWeight: 'bold' }}>{status}</p>
-    </div>
-  )
-}
-
-export default App
+export default App;
