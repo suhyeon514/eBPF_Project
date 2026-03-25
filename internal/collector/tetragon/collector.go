@@ -82,7 +82,6 @@ func (c *Collector) Start(ctx context.Context) error {
 	c.started = true
 
 	go c.run(runCtx)
-
 	return nil
 }
 
@@ -113,16 +112,13 @@ func (c *Collector) run(ctx context.Context) {
 
 	file, err := os.Open(c.cfg.LogPath)
 	if err != nil {
-		c.pushError(fmt.Errorf("open tetragon log file: %w", err))
+		c.pushError(err)
 		return
 	}
 	defer file.Close()
 
 	if !c.cfg.ReadFromHead {
-		if _, err := file.Seek(0, io.SeekEnd); err != nil {
-			c.pushError(fmt.Errorf("seek tetragon log file end: %w", err))
-			return
-		}
+		file.Seek(0, io.SeekEnd)
 	}
 
 	reader := bufio.NewReader(file)
@@ -140,63 +136,46 @@ func (c *Collector) run(ctx context.Context) {
 				time.Sleep(c.cfg.PollInterval)
 				continue
 			}
-
-			c.pushError(fmt.Errorf("read tetragon log line: %w", err))
-			time.Sleep(c.cfg.PollInterval)
+			c.pushError(err)
 			continue
 		}
 
-		line = trimLine(line)
+		line = []byte(strings.TrimSpace(string(line)))
 		if len(line) == 0 {
 			continue
 		}
 
-		rawType, err := detectRawType(line)
-		if err != nil {
-			c.pushError(fmt.Errorf("detect tetragon raw type: %w", err))
-			continue
-		}
+		rawType := detectRawType(line)
 
 		raw := model.NewRawEnvelope(
 			model.RawSourceTetragon,
 			rawType,
-			model.RawJSON{
-				Data: append([]byte(nil), line...),
-			},
+			model.RawJSON{Data: line},
 		)
 
-		if !c.pushEvent(ctx, raw) {
+		select {
+		case c.events <- raw:
+		case <-ctx.Done():
 			return
 		}
 	}
 }
 
-func detectRawType(line []byte) (string, error) {
+func detectRawType(line []byte) string {
 	var top map[string]json.RawMessage
-	if err := json.Unmarshal(line, &top); err != nil {
-		return "", fmt.Errorf("unmarshal top-level json: %w", err)
-	}
+	json.Unmarshal(line, &top)
 
 	switch {
 	case top["process_exec"] != nil:
-		return "process_exec", nil
+		return "process_exec"
 	case top["process_exit"] != nil:
-		return "process_exit", nil
+		return "process_exit"
+	case top["process_kprobe"] != nil:
+		return "process_kprobe"
+	case top["process_tracepoint"] != nil:
+		return "process_tracepoint"
 	default:
-		return "", fmt.Errorf("unsupported tetragon event type")
-	}
-}
-
-func trimLine(line []byte) []byte {
-	return []byte(strings.TrimSpace(string(line)))
-}
-
-func (c *Collector) pushEvent(ctx context.Context, raw model.RawEnvelope) bool {
-	select {
-	case c.events <- raw:
-		return true
-	case <-ctx.Done():
-		return false
+		return "unknown" // 🔥 핵심
 	}
 }
 
@@ -204,6 +183,5 @@ func (c *Collector) pushError(err error) {
 	select {
 	case c.errors <- err:
 	default:
-
 	}
 }
