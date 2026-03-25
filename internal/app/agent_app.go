@@ -6,15 +6,18 @@ import (
 
 	auditdcollector "github.com/suhyeon514/eBPF_Project/internal/collector/auditd"
 	conntrackcollector "github.com/suhyeon514/eBPF_Project/internal/collector/conntrack"
+	healthcollector "github.com/suhyeon514/eBPF_Project/internal/collector/health"
 	journaldcollector "github.com/suhyeon514/eBPF_Project/internal/collector/journald"
 	nftablescollector "github.com/suhyeon514/eBPF_Project/internal/collector/nftables"
 	nginxcollector "github.com/suhyeon514/eBPF_Project/internal/collector/nginx"
 	tetragoncollector "github.com/suhyeon514/eBPF_Project/internal/collector/tetragon"
 	"github.com/suhyeon514/eBPF_Project/internal/config"
+	"github.com/suhyeon514/eBPF_Project/internal/health"
 	"github.com/suhyeon514/eBPF_Project/internal/model"
 	"github.com/suhyeon514/eBPF_Project/internal/normalize"
 	auditdnormalizer "github.com/suhyeon514/eBPF_Project/internal/normalize/auditd"
 	conntracknormalizer "github.com/suhyeon514/eBPF_Project/internal/normalize/conntrack"
+	healthnormalizer "github.com/suhyeon514/eBPF_Project/internal/normalize/health"
 	journaldnormalizer "github.com/suhyeon514/eBPF_Project/internal/normalize/journald"
 	nftablesnormalizer "github.com/suhyeon514/eBPF_Project/internal/normalize/nftables"
 	nginxnormalizer "github.com/suhyeon514/eBPF_Project/internal/normalize/nginx"
@@ -31,6 +34,10 @@ func NewAgentApp(cfg *config.Config) *AgentApp {
 }
 
 func (a *AgentApp) Run(ctx context.Context) error {
+
+	// 1. Health Registry 생성
+	reg := health.NewRegistry()
+
 	writer, err := jsonl.New(a.cfg.Output.NormalizedPath)
 	if err != nil {
 		return fmt.Errorf("create jsonl writer: %w", err)
@@ -47,6 +54,7 @@ func (a *AgentApp) Run(ctx context.Context) error {
 	router := normalize.NewRouter()
 
 	// 단일 Normalizer 생성
+	router.Register(model.RawSourceHealth, healthnormalizer.New(host))
 	router.Register(model.RawSourceTetragon, tetragonnormalizer.New(host))
 	router.Register(model.RawSourceJournald, journaldnormalizer.New(host))
 	router.Register(model.RawSourceAuditd, auditdnormalizer.New(host))
@@ -113,6 +121,10 @@ func (a *AgentApp) Run(ctx context.Context) error {
 		return fmt.Errorf("start tetragon collector: %w", err)
 	}
 	defer tetragonCollector.Stop(context.Background())
+
+	// 🔥 4. Health Collector 시작
+	healthChan := make(chan model.RawEnvelope, 16)
+	healthcollector.Start(reg, healthChan)
 
 	if journaldCollector != nil {
 		if err := journaldCollector.Start(ctx); err != nil {
@@ -190,7 +202,10 @@ func (a *AgentApp) Run(ctx context.Context) error {
 	for {
 		if tetragonEvents == nil && tetragonErrors == nil &&
 			journaldEvents == nil && journaldErrors == nil &&
-			auditdEvents == nil && auditdErrors == nil {
+			auditdEvents == nil && auditdErrors == nil &&
+			conntrackEvents == nil && conntrackErrors == nil &&
+			nftablesEvents == nil && nftablesErrors == nil &&
+			nginxEvents == nil && nginxErrors == nil {
 			if err := writer.Sync(); err != nil {
 				return fmt.Errorf("sync writer: %w", err)
 			}
@@ -198,13 +213,24 @@ func (a *AgentApp) Run(ctx context.Context) error {
 		}
 
 		select {
+
+		// 🔥 Health 이벤트
+		case raw := <-healthChan:
+			reg.MarkCollectorOK(string(model.RawSourceHealth)) // 헬스 체크용 상태 업데이트
+			if err := a.handleRawEvent(ctx, writer, router, raw, reg); err != nil {
+				return err
+			}
+
 		case raw, ok := <-tetragonEvents:
 			if !ok {
 				tetragonEvents = nil
 				continue
 			}
 
-			if err := a.handleRawEvent(ctx, writer, router, raw); err != nil {
+			// reg.MarkCollectorOK() // 헬스 체크용 상태 업데이트
+			reg.MarkCollectorOK(string(model.RawSourceTetragon))
+
+			if err := a.handleRawEvent(ctx, writer, router, raw, reg); err != nil {
 				return fmt.Errorf("handle tetragon raw event: %w", err)
 			}
 
@@ -221,7 +247,9 @@ func (a *AgentApp) Run(ctx context.Context) error {
 				continue
 			}
 
-			if err := a.handleRawEvent(ctx, writer, router, raw); err != nil {
+			reg.MarkCollectorOK(string(model.RawSourceJournald)) // 헬스 체크용 상태 업데이트
+
+			if err := a.handleRawEvent(ctx, writer, router, raw, reg); err != nil {
 				return fmt.Errorf("handle journald raw event: %w", err)
 			}
 
@@ -237,8 +265,9 @@ func (a *AgentApp) Run(ctx context.Context) error {
 				auditdEvents = nil
 				continue
 			}
+			reg.MarkCollectorOK(string(model.RawSourceAuditd)) // 헬스 체크용 상태 업데이트
 
-			if err := a.handleRawEvent(ctx, writer, router, raw); err != nil {
+			if err := a.handleRawEvent(ctx, writer, router, raw, reg); err != nil {
 				return fmt.Errorf("handle auditd raw event: %w", err)
 			}
 
@@ -255,7 +284,9 @@ func (a *AgentApp) Run(ctx context.Context) error {
 				continue
 			}
 
-			if err := a.handleRawEvent(ctx, writer, router, raw); err != nil {
+			reg.MarkCollectorOK(string(model.RawSourceConntrack)) // 헬스 체크용 상태 업데이트
+
+			if err := a.handleRawEvent(ctx, writer, router, raw, reg); err != nil {
 				return fmt.Errorf("handle conntrack raw event: %w", err)
 			}
 
@@ -272,7 +303,9 @@ func (a *AgentApp) Run(ctx context.Context) error {
 				continue
 			}
 
-			if err := a.handleRawEvent(ctx, writer, router, raw); err != nil {
+			reg.MarkCollectorOK(string(model.RawSourceNFTables)) // 헬스 체크용 상태 업데이트
+
+			if err := a.handleRawEvent(ctx, writer, router, raw, reg); err != nil {
 				return fmt.Errorf("handle nftables raw event: %w", err)
 			}
 
@@ -288,8 +321,9 @@ func (a *AgentApp) Run(ctx context.Context) error {
 				nginxEvents = nil
 				continue
 			}
-			fmt.Println("🔥 nginx RAW 들어옴") // 디버깅용
-			if err := a.handleRawEvent(ctx, writer, router, raw); err != nil {
+			fmt.Println("🔥 nginx RAW 들어옴")                    // 디버깅용
+			reg.MarkCollectorOK(string(model.RawSourceNginx)) // 헬스 체크용 상태 업데이트
+			if err := a.handleRawEvent(ctx, writer, router, raw, reg); err != nil {
 				return fmt.Errorf("handle nginx raw event: %w", err)
 			}
 
@@ -313,19 +347,25 @@ func (a *AgentApp) handleRawEvent(
 	writer *jsonl.Writer,
 	router *normalize.Router,
 	raw model.RawEnvelope,
+	reg *health.Registry,
 ) error {
 	events, err := router.Normalize(ctx, raw)
 	if err != nil {
+		reg.IncDrop()
 		return fmt.Errorf("normalize source=%s: %w", raw.Source, err)
 	}
+
+	reg.MarkNormalizeOK()
 
 	for i := range events {
 		events[i].RouteTopic = routeTopic(events[i])
 	}
 
 	if err := writeEvents(writer, events); err != nil {
+		reg.IncDrop()
 		return fmt.Errorf("write normalized events: %w", err)
 	}
+	reg.MarkOutputOK()
 	return nil
 }
 
