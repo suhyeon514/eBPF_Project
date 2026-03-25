@@ -10,6 +10,7 @@ import (
 	journaldcollector "github.com/suhyeon514/eBPF_Project/internal/collector/journald"
 	nftablescollector "github.com/suhyeon514/eBPF_Project/internal/collector/nftables"
 	nginxcollector "github.com/suhyeon514/eBPF_Project/internal/collector/nginx"
+	resourcecollector "github.com/suhyeon514/eBPF_Project/internal/collector/resource"
 	tetragoncollector "github.com/suhyeon514/eBPF_Project/internal/collector/tetragon"
 	"github.com/suhyeon514/eBPF_Project/internal/config"
 	"github.com/suhyeon514/eBPF_Project/internal/health"
@@ -21,6 +22,7 @@ import (
 	journaldnormalizer "github.com/suhyeon514/eBPF_Project/internal/normalize/journald"
 	nftablesnormalizer "github.com/suhyeon514/eBPF_Project/internal/normalize/nftables"
 	nginxnormalizer "github.com/suhyeon514/eBPF_Project/internal/normalize/nginx"
+	resourcenormalizer "github.com/suhyeon514/eBPF_Project/internal/normalize/resource"
 	tetragonnormalizer "github.com/suhyeon514/eBPF_Project/internal/normalize/tetragon"
 	"github.com/suhyeon514/eBPF_Project/internal/output/jsonl"
 )
@@ -61,7 +63,7 @@ func (a *AgentApp) Run(ctx context.Context) error {
 	router.Register(model.RawSourceConntrack, conntracknormalizer.New(host)) // conntrack에 등록
 	router.Register(model.RawSourceNFTables, nftablesnormalizer.New(host))   // nftables에 동일 Normalizer 등록
 	router.Register(model.RawSourceNginx, nginxnormalizer.New(host))
-
+	router.Register(model.RawSourceResource, resourcenormalizer.New(host)) // resource에 Normalizer 등록
 	tetragonCollector := tetragoncollector.New(tetragoncollector.Config{
 		LogPath:      a.cfg.Tetragon.LogPath,
 		PollInterval: a.cfg.Tetragon.PollInterval,
@@ -117,6 +119,11 @@ func (a *AgentApp) Run(ctx context.Context) error {
 		})
 	}
 
+	// 🔥 [추가] Resource Collector 생성 (필수 모듈이므로 무조건 생성)
+	resourceCollector := resourcecollector.New(resourcecollector.Config{
+		Interval: a.cfg.Resource.PollInterval,
+	})
+
 	if err := tetragonCollector.Start(ctx); err != nil {
 		return fmt.Errorf("start tetragon collector: %w", err)
 	}
@@ -161,6 +168,11 @@ func (a *AgentApp) Run(ctx context.Context) error {
 		defer nginxCollector.Stop(context.Background())
 	}
 
+	if err := resourceCollector.Start(ctx); err != nil {
+		return fmt.Errorf("start resource collector: %w", err)
+	}
+	defer resourceCollector.Stop(context.Background())
+
 	tetragonEvents := tetragonCollector.Events()
 	tetragonErrors := tetragonCollector.Errors()
 
@@ -199,13 +211,18 @@ func (a *AgentApp) Run(ctx context.Context) error {
 		nginxErrors = nginxCollector.Errors()
 	}
 
+	// 🔥 [추가] Resource 채널 연결
+	resourceEvents := resourceCollector.Events()
+	resourceErrors := resourceCollector.Errors()
+
 	for {
 		if tetragonEvents == nil && tetragonErrors == nil &&
 			journaldEvents == nil && journaldErrors == nil &&
 			auditdEvents == nil && auditdErrors == nil &&
 			conntrackEvents == nil && conntrackErrors == nil &&
 			nftablesEvents == nil && nftablesErrors == nil &&
-			nginxEvents == nil && nginxErrors == nil {
+			nginxEvents == nil && nginxErrors == nil &&
+			resourceEvents == nil && resourceErrors == nil {
 			if err := writer.Sync(); err != nil {
 				return fmt.Errorf("sync writer: %w", err)
 			}
@@ -333,13 +350,34 @@ func (a *AgentApp) Run(ctx context.Context) error {
 				continue
 			}
 			fmt.Printf("[collector=nginx] error=%v\n", err)
+
+		case raw, ok := <-resourceEvents:
+			if !ok {
+				resourceEvents = nil
+				continue
+			}
+			reg.MarkCollectorOK(string(model.RawSourceResource)) // 헬스 체크 상태 업데이트
+
+			if err := a.handleRawEvent(ctx, writer, router, raw, reg); err != nil {
+				return fmt.Errorf("handle resource raw event: %w", err)
+			}
+
+		// 🔥 [추가] Resource 에러 처리
+		case err, ok := <-resourceErrors:
+			if !ok {
+				resourceErrors = nil
+				continue
+			}
+			fmt.Printf("[collector=resource] error=%v\n", err)
+
+		// 🛑 단일 컨텍스트 종료 처리 (여기 한 곳에서만 선언!)
 		case <-ctx.Done():
 			if err := writer.Sync(); err != nil {
 				return fmt.Errorf("sync writer: %w", err)
 			}
 			return nil
-		}
-	}
+		} // select 끝
+	} // for 끝
 }
 
 func (a *AgentApp) handleRawEvent(

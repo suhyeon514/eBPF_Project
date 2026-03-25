@@ -50,9 +50,14 @@ type Config struct {
 	} `yaml:"auditd"`
 
 	Nginx struct {
-		Enabled      bool          `yaml:"enabled"`
-		LogPath      string        `yaml:"log_path"`
+		Enabled bool   `yaml:"enabled"`
+		LogPath string `yaml:"log_path"`
 	} `yaml:"nginx"`
+
+	Resource struct {
+		PollInterval time.Duration `yaml:"poll_interval"`
+	} `yaml:"resource"`
+
 	Output struct {
 		NormalizedPath string `yaml:"normalized_path"`
 	} `yaml:"output"`
@@ -117,6 +122,33 @@ func Load(path string) (*Config, error) {
 		if cfg.Auditd.PollInterval <= 0 {
 			cfg.Auditd.PollInterval = 1 * time.Second
 		}
+	}
+	if cfg.Conntrack.Enabled {
+		if cfg.Conntrack.Args == nil {
+			cfg.Conntrack.Args = []string{"-E", "-o", "timestamp,extended"}
+		}
+		if cfg.Conntrack.RestartDelay <= 0 {
+			cfg.Conntrack.RestartDelay = 2 * time.Second
+		}
+	}
+	if cfg.Nftables.Enabled {
+		if cfg.Nftables.LogPath == "" {
+			cfg.Nftables.LogPath = "/var/log/kern.log"
+		}
+		if cfg.Nftables.PollInterval <= 0 {
+			cfg.Nftables.PollInterval = 1 * time.Second
+		}
+		if len(cfg.Nftables.Prefixes) == 0 {
+			cfg.Nftables.Prefixes = []string{"NFT_DROP", "NFT_ACCEPT", "NFT_TRACE", "NFT_LOG", "NFT_REJECT", "NFT_INVALID", "IPTABLES_DROP", "IPTABLES_REJECT", "IPTABLES_ACCEPT", "[UFW BLOCK]", "[UFW ALLOW]", "[UFW REJECT]"}
+		}
+	}
+	if cfg.Nginx.Enabled {
+		if cfg.Nginx.LogPath == "" {
+			cfg.Nginx.LogPath = "/var/log/nginx/access.log"
+		}
+	}
+	if cfg.Resource.PollInterval <= 0 {
+		cfg.Resource.PollInterval = 1 * time.Minute
 	}
 
 	return &cfg, nil

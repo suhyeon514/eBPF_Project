@@ -16,6 +16,7 @@ const (
 	RawSourceNetwork   RawSource = "network"
 	RawSourceNginx     RawSource = "nginx"
 	RawSourceHealth    RawSource = "health"
+	RawSourceResource  RawSource = "resource"
 )
 
 type RawEnvelope struct {
