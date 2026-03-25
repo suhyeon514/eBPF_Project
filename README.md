@@ -18,7 +18,7 @@
 | 컴포넌트 | 기술 (버전) | 역할 |
 | :--- | :--- | :--- |
 | **Message Queue** | Apache Kafka (3.8.0) | 실시간 로그 버퍼링 및 큐잉 |
-| **Pipeline** | Data Prepper (2.7.0) | 데이터 ETL 및 OpenSearch 전송 |
+| **Pipeline** | Data Prepper (2.14.0) | 데이터 ETL 및 OpenSearch 전송 |
 | **Search Engine** | OpenSearch (2.12.0) | 분산 로그 검색 및 보안 데이터 저장 |
 | **Management DB** | PostgreSQL (15.6) | 시스템 메타데이터 관리 |
 | **Visualization** | Grafana (10.4.0) | 보안 관제 대시보드 시각화 |
