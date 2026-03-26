@@ -65,6 +65,10 @@ class EDRLog(BaseModel):
     auth: Optional[AuthDetails] = None
     labels: Optional[dict] = None
 
+# --- 정책 확인 관련 스키마 ---
+class PolicyCheckUpdateRequest(BaseModel):
+    agent_hash: str = Field(..., description="에이전트가 현재 가지고 있는 정책 파일의 SHA-256 해시값")
+
 # --- [4] 기존 로그인 관련 스키마 (유지) ---
 
 class LoginRequest(BaseModel):

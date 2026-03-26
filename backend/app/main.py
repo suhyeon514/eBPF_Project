@@ -1,7 +1,8 @@
 import os
 from pathlib import Path
 from dotenv import load_dotenv
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from neo4j import GraphDatabase
@@ -13,14 +14,26 @@ from . import models
 from .api.auth.router import router as auth_router
 from .api.dashboard.router import router as dashboard_router
 from .api.assets.router import router as assets_router
+from .api.policy.router import router as policy_router  # 정책 라우터 임포트
 
 env_path = Path(__file__).resolve().parent.parent.parent / ".env"
 load_dotenv(dotenv_path=env_path)
 
 app = FastAPI(title="K9")
 
+# 테스트용 ip 
+ALLOWED_IPS = os.getenv("ALLOWED_IPS", "0.0.0.0").split(",")
+
+@app.middleware("http")
+async def ip_filter_middleware(request: Request, call_next):
+    client_ip = request.client.host
+    if client_ip not in ALLOWED_IPS:
+        return JSONResponse(status_code=403, content={"detail": "접근이 거부되었습니다."})
+    response = await call_next(request)
+    return response
+
 # DB 테이블 생성
-models.Base.metadata.create_all(bind=engine)
+# models.Base.metadata.create_all(bind=engine)
 
 app.add_middleware(
     CORSMiddleware,
@@ -35,8 +48,10 @@ app.include_router(auth_router)
 app.include_router(dashboard_router)
 app.include_router(assets_router)
 
-# --- 인프라 설정 및 Health Check (기존 코드 유지) ---
+# 정책 확인 라우터 추가
+app.include_router(policy_router)
 
+# --- 인프라 설정 및 Health Check (기존 코드 유지) ---
 
 NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
 NEO4J_URI = "bolt://localhost:7687"
