@@ -92,3 +92,28 @@ class TopAlertResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+class DetectionRuleBase(BaseModel):
+    target_topic: str
+    category: Optional[str] = None
+    rule_name: str
+    conditions: Any  # JSONB 대응
+    detection_method: str = "simple"
+    base_score: int = 0
+    severity: str
+    mitre_technique_id: Optional[str] = None
+    mitre_tactic: Optional[str] = None
+    reference_url: Optional[str] = None
+    is_active: bool = True
+    description: Optional[str] = None
+
+class DetectionRuleCreate(DetectionRuleBase):
+    pass
+
+class DetectionRule(DetectionRuleBase):
+    rule_id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True # SQLAlchemy 모델을 Pydantic으로 자동 변환

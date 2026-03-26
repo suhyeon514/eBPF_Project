@@ -1,4 +1,5 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Text, Float, func
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Text, Float, func, Boolean, Index
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from .database import Base
@@ -67,3 +68,41 @@ class Assets(Base):
 
     def __repr__(self):
         return f"<Agent(hostname={self.hostname}, ip={self.ip_address}, status={self.status})>"
+
+class DetectionRule(Base):
+    __tablename__ = "detection_rules"
+
+    rule_id = Column(Integer, primary_key=True, index=True)
+    
+    # [분류 및 매핑]
+    target_topic = Column(String(50), nullable=False, index=True)
+    category = Column(String(50))
+    rule_name = Column(String(100), nullable=False)
+    
+    # [탐지 로직 - 고도화]
+    # 구조 예시: [{"field": "process.exe", "op": "startswith", "value": "/tmp/"}, ...]
+    # 혹은 단순 일치일 경우: {"process.comm": "cat"}
+    conditions = Column(JSONB, nullable=False) 
+    
+    # 워커(Worker)가 어떤 엔진을 쓸지 명시 (예: 'simple', 'advanced_json', 'regex')
+    detection_method = Column(String(20), default='simple') 
+    
+    # [위험도 및 대응]
+    base_score = Column(Integer, default=0)
+    severity = Column(String(20), nullable=False)
+    
+    # [마이터 어택 정보]
+    mitre_technique_id = Column(String(20), index=True) 
+    mitre_tactic = Column(String(50), index=True)
+    reference_url = Column(Text)
+    
+    # [운영 관리]
+    is_active = Column(Boolean, default=True)
+    description = Column(Text)
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index('idx_rules_topic_active', 'target_topic', postgresql_where=(is_active == True)),
+    )
