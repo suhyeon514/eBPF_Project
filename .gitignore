@@ -13,3 +13,5 @@ node_modules/
 Thumbs.db
 
 *.db
+
+/policy_contents/
