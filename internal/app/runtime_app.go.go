@@ -30,6 +30,7 @@ import (
 	"github.com/suhyeon514/eBPF_Project/internal/output/jsonl"
 	"github.com/suhyeon514/eBPF_Project/internal/service/policy"
 	"github.com/suhyeon514/eBPF_Project/internal/transport/api"
+	websocket "github.com/suhyeon514/eBPF_Project/internal/transport/websocket"
 )
 
 type RuntimeDeps struct {
@@ -120,7 +121,16 @@ func (a *RuntimeApp) Run(ctx context.Context) error {
 	healthChan := make(chan model.RawEnvelope, 16)
 	healthcollector.Start(reg, healthChan)
 
-	// 🔥 [추가] 메인 루프 진입 전, 주기적 정책 확인을 위한 타이머 생성 (예: 30초)
+	// =========================================================================
+	// [추가] WebSocket 및 AVML(Forensic) 리스너 백그라운드 실행
+	// =========================================================================
+	log.Printf("🚀 [WebSocket] AVML 포렌식 리스너 시작 (Target: %s) (덤프 경로: %s)", a.deps.ServerBaseURL, a.cfg.Forensic.DumpPath)
+	// agentID := a.deps.AgentID // 현재 에이전트 ID 하드코딩, 인증 로직 생성된 후에는 a.deps.AgentID로 변경 필요
+	agentID := "host-lab-001"
+	// go websocket.StartWebSocketListener(wsBaseURL, agentID, dumpPath)
+	go websocket.StartWebSocketListener(a.deps.ServerBaseURL, agentID, a.cfg.Forensic.DumpPath)
+
+	// 메인 루프 진입 전, 주기적 정책 확인을 위한 타이머 생성 (예: 30초)
 	policyTicker := time.NewTicker(30 * time.Second)
 	defer policyTicker.Stop()
 	log.Println("⏱️  [정책 업데이트 타이머 시작] ")

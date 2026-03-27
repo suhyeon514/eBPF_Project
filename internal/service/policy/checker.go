@@ -53,7 +53,7 @@ func (s *Service) CheckAndSync() (bool, error) {
 	// 3. 서버에 정책 검증 요청 (인터페이스 활용)
 	resp, err := s.apiClient.CheckPolicyUpdate(req)
 	if err != nil {
-		return false, fmt.Errorf("분석 서버와 통신 실패: %w", err)
+		return false, fmt.Errorf("분석 서버와 통신 실패: %w", err) //여기 오류
 	}
 
 	// 4. 업데이트가 필요 없는 경우 종료

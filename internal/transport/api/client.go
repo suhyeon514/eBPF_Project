@@ -76,3 +76,41 @@ func (c *Client) CheckPolicyUpdate(req dto.PolicyCheckRequest) (*dto.PolicyCheck
 
 	return &resp, nil
 }
+
+// // [AVML 덤프 관련 추가]
+// // FetchCommands는 분석 서버에 에이전트(자신)에게 내려진 긴급 명령(예: AVML 덤프)이 있는지 확인
+// func (c *Client) FetchCommands(agentID string) (*dto.CommandFetchResponse, error) {
+// 	// 1. HTTP GET 요청 URL 생성 (Path Variable 방식)
+// 	endpoint := fmt.Sprintf("%s/api/v1/forensic/commands/%s", c.baseURL, agentID)
+// 	httpReq, err := http.NewRequest("GET", endpoint, nil) // GET 요청이므로 Body는 nil
+// 	if err != nil {
+// 		return nil, fmt.Errorf("명령 조회 HTTP 요청 객체 생성 실패: %w", err)
+// 	}
+
+// 	// 2. 필수 HTTP 헤더 설정 (추후 인증이 도입될 것을 대비)
+// 	httpReq.Header.Set("Accept", "application/json")
+// 	if c.authToken != "" {
+// 		httpReq.Header.Set("Authorization", "Bearer "+c.authToken)
+// 	}
+
+// 	// 3. 실제 네트워크 요청 전송
+// 	httpResp, err := c.httpClient.Do(httpReq)
+// 	if err != nil {
+// 		return nil, fmt.Errorf("명령 조회 API 호출 실패: %w", err)
+// 	}
+// 	defer httpResp.Body.Close() // 메모리 누수 방지
+
+// 	// 4. 서버 응답 코드 확인 (200 OK가 아니면 에러 처리)
+// 	if httpResp.StatusCode != http.StatusOK {
+// 		bodyBytes, _ := io.ReadAll(httpResp.Body)
+// 		return nil, fmt.Errorf("명령 조회 서버 에러 응답 (상태코드: %d, 내용: %s)", httpResp.StatusCode, string(bodyBytes))
+// 	}
+
+// 	// 5. 서버의 JSON 응답을 DTO 구조체로 역직렬화 (Unmarshal)
+// 	var resp dto.CommandFetchResponse
+// 	if err := json.NewDecoder(httpResp.Body).Decode(&resp); err != nil {
+// 		return nil, fmt.Errorf("명령 응답 데이터 파싱 실패: %w", err)
+// 	}
+
+// 	return &resp, nil
+// }

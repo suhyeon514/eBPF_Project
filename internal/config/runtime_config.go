@@ -14,6 +14,7 @@ type RuntimeConfig struct {
 	Host       RuntimeHostConfig       `yaml:"host"`
 	Collectors RuntimeCollectorsConfig `yaml:"collectors"`
 	Output     RuntimeOutputConfig     `yaml:"output"`
+	Forensic   RuntimeForensicsConfig  `yaml:"forensic"`
 }
 
 type RuntimeHostConfig struct {
@@ -77,6 +78,10 @@ type ResourceConfig struct {
 
 type RuntimeOutputConfig struct {
 	NormalizedPath string `yaml:"normalized_path"`
+}
+
+type RuntimeForensicsConfig struct {
+	DumpPath string `yaml:"dump_path"`
 }
 
 // LoadRuntime는 runtime yaml 파일을 읽고, 기본값을 채운 뒤 검증한다.
@@ -161,8 +166,11 @@ func (c *RuntimeConfig) ApplyDefaults() {
 
 	// resource
 	if c.Collectors.Resource.PollInterval <= 0 {
-		c.Collectors.Tetragon.PollInterval = 10 * time.Second
+		c.Collectors.Resource.PollInterval = 10 * time.Second
 	}
+
+	// forensic
+	c.Forensic.DumpPath = strings.TrimSpace(c.Forensic.DumpPath)
 
 	// output
 	c.Output.NormalizedPath = strings.TrimSpace(c.Output.NormalizedPath)
