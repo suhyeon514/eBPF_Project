@@ -14,10 +14,6 @@ def read_top_alerts(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user)
 ):
-    # 1. 먼저 최신 데이터를 동기화 (실무에선 스케줄러가 따로 돌지만, 일단 여기 포함)
-    DashboardService.sync_alerts_from_os(db)
-    
-    # 2. DB에서 상위 5개 반환
     return DashboardService.get_top_5_alerts(db)
 
 @router.get("/stats")

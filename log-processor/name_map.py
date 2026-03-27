@@ -7,12 +7,16 @@ FIELD_MAPPING = {
     "process.comm": "target.process_name",
     "process.args": "target.process_args",
     "process.parent_exe": "target.parent_path",
+    "process.parent_comm": "target.parent_name",
+    "process.uid": "target.uid",  # 추가: 가중치 연산용
+    "process.gid": "target.gid",
     
     # 네트워크 관련 (Network & Tetragon.network)
     "network.src_ip": "target.src_ip",
     "network.dst_ip": "target.dest_ip",
     "network.src_port": "target.src_port",
     "network.dst_port": "target.dest_port",
+    "network.protocol": "target.protocol",
     
     # 인증 및 서비스 관련 (Auditd & Journald)
     "auth.method": "target.auth_method",
@@ -22,6 +26,7 @@ FIELD_MAPPING = {
     
     # 센서 및 공통
     "host.hostname": "target.hostname",
+    "collector.source_type": "target.source_type", # 추가: 가중치 연산용
     "event_type": "target.event_type"
 }
 

@@ -159,7 +159,7 @@ def seed_db():
         if not db.query(User).filter(User.username == "admin").first():
             admin_user = User(
                 username="admin",
-                password_hash=get_password_hash("ADMIN"),
+                password_hash=get_password_hash("admin123!"),
                 full_name="관리자",
                 role_id=admin_role.id,
                 email="admin@example.com"
@@ -195,439 +195,115 @@ def seed_db():
 
 def seed_detection_rules(db: Session):
     """
-    K9 플랫폼 초기 탐지 룰 데이터 삽입 (Seed Data)
+    K9 플랫폼 초기 탐지 룰 데이터 삽입 (슬림한 위험도 연산 로직에 최적화된 점수 반영)
     """
+    print("🛡️ 탐지 룰 통합 시딩 시작...")
     
-    # 1. 초기 침투 및 실행 (Initial Access & Execution) 그룹 룰 정의
+    # 1. 초기 침투 및 실행 (Initial Access & Execution)
     initial_access_rules = [
-        DetectionRule(
-            target_topic="tetragon.process",
-            category="Initial Access & Execution",
-            rule_name="Web Server Spawning Shell",
-            conditions=[
-                {"field": "process.parent_comm", "op": "contains", "value": "nginx"},
-                {"field": "process.comm", "op": "in", "value": ["sh", "bash", "dash", "zsh"]}
-            ],
-            detection_method="advanced_json",
-            base_score=60,
-            severity="High",
-            mitre_technique_id="T1190",
-            mitre_tactic="Initial Access",
-            reference_url="https://github.com/SigmaHQ/sigma/blob/master/rules/linux/process_creation/proc_creation_lnx_web_server_shell.yml",
-            description="Nginx 웹 서버 프로세스 하위에서 쉘이 실행되었습니다. 웹 취약점(RCE)을 통한 침투가 강력히 의심됩니다."
-        ),
-        DetectionRule(
-            target_topic="tetragon.process",
-            category="Execution",
-            rule_name="Base64 Encoded Command Execution",
-            conditions=[
-                {"field": "process.args", "op": "contains", "value": "base64"},
-                {"field": "process.args", "op": "contains", "value": "-d"}
-            ],
-            detection_method="advanced_json",
-            base_score=75,
-            severity="Critical",
-            mitre_technique_id="T1059.004",
-            mitre_tactic="Execution",
-            description="인코딩된 명령어가 실행되었습니다. 탐지 우회를 시도하는 악성 스크립트일 가능성이 높습니다."
-        ),
-        DetectionRule(
-            target_topic="tetragon.process",
-            category="Execution",
-            rule_name="Execution from Suspicious Directory",
-            conditions=[
-                {"field": "process.exe", "op": "startswith_list", "value": ["/tmp/", "/dev/shm/", "/var/tmp/"]}
-            ],
-            detection_method="advanced_json",
-            base_score=70,
-            severity="High",
-            mitre_technique_id="T1059",
-            mitre_tactic="Execution",
-            description="임시 디렉토리(/tmp 등)에서 실행 파일이 포착되었습니다. 악성코드 드롭 후 실행되는 전형적인 패턴입니다."
-        ),
-        DetectionRule(
-            target_topic="tetragon.process",
-            category="Initial Access & Discovery",
-            rule_name="Web Server System Discovery",
-            conditions=[
-                {"field": "process.parent_comm", "op": "contains", "value": "nginx"},
-                {"field": "process.comm", "op": "in", "value": ["id", "whoami", "hostname", "uname"]}
-            ],
-            detection_method="advanced_json",
-            base_score=60,
-            severity="High",
-            mitre_technique_id="T1087",
-            mitre_tactic="Discovery",
-            description="웹 서버 권한으로 시스템 정찰 명령이 수행되었습니다. 침투 성공 후 초기 정보 수집 단계로 판단됩니다."
-        ),
-        DetectionRule(
-            target_topic="tetragon.process",
-            category="Execution",
-            rule_name="Hidden File Execution",
-            conditions=[
-                {"field": "process.comm", "op": "startswith", "value": "."}
-            ],
-            detection_method="advanced_json",
-            base_score=50,
-            severity="Medium",
-            mitre_technique_id="T1564.001",
-            mitre_tactic="Defense Evasion",
-            description="숨김 파일(.) 형태의 바이너리가 실행되었습니다. 시스템 내 은폐를 시도하는 악성 프로세스일 수 있습니다."
-        )
+        DetectionRule(target_topic="tetragon.process", category="Initial Access & Execution", rule_name="Web Server Spawning Shell", conditions=[{"field": "process.parent_comm", "op": "contains", "value": "nginx"}, {"field": "process.comm", "op": "in", "value": ["sh", "bash", "dash", "zsh"]}], detection_method="advanced_json", base_score=45, severity="High", mitre_technique_id="T1190", mitre_tactic="Initial Access", description="Nginx 하위 셸 실행 탐지."),
+        DetectionRule(target_topic="tetragon.process", category="Execution", rule_name="Base64 Encoded Command Execution", conditions=[{"field": "process.args", "op": "contains", "value": "base64"}, {"field": "process.args", "op": "contains", "value": "-d"}], detection_method="advanced_json", base_score=65, severity="Critical", mitre_technique_id="T1059.004", mitre_tactic="Execution", description="인코딩된 명령어 실행 탐지."),
+        DetectionRule(target_topic="tetragon.process", category="Execution", rule_name="Execution from Suspicious Directory", conditions=[{"field": "process.exe", "op": "startswith_list", "value": ["/tmp/", "/dev/shm/", "/var/tmp/"]}], detection_method="advanced_json", base_score=50, severity="High", mitre_technique_id="T1059", mitre_tactic="Execution", description="임시 디렉토리 내 바이너리 실행 탐지."),
+        DetectionRule(target_topic="tetragon.process", category="Initial Access & Discovery", rule_name="Web Server System Discovery", conditions=[{"field": "process.parent_comm", "op": "contains", "value": "nginx"}, {"field": "process.comm", "op": "in", "value": ["id", "whoami", "hostname", "uname"]}], detection_method="advanced_json", base_score=40, severity="High", mitre_technique_id="T1087", mitre_tactic="Discovery", description="웹 서버 권한 시스템 정찰 탐지."),
+        DetectionRule(target_topic="tetragon.process", category="Execution", rule_name="Hidden File Execution", conditions=[{"field": "process.comm", "op": "startswith", "value": "."}], detection_method="advanced_json", base_score=25, severity="Medium", mitre_technique_id="T1564.001", mitre_tactic="Defense Evasion", description="숨김 파일 실행 탐지.")
     ]
 
     # 2. 내부 탐색 및 자격 증명 탈취 (Discovery & Credential Access)
     discovery_credential_rules = [
-        DetectionRule(
-            target_topic="tetragon.process",
-            category="Discovery & Credential Access",
-            rule_name="WordPress Config Access",
-            conditions=[
-                {"field": "process.args", "op": "contains", "value": "wp-config.php"},
-                {"field": "process.comm", "op": "in", "value": ["cat", "grep", "vi", "nano"]}
-            ],
-            detection_method="advanced_json",
-            base_score=75,
-            severity="High",
-            mitre_technique_id="T1552.001",
-            mitre_tactic="Credential Access",
-            description="WordPress 설정 파일(wp-config.php)에 접근 시도가 탐지되었습니다. DB 자격 증명 유출 위험이 있습니다."
-        ),
-        DetectionRule(
-            target_topic="tetragon.process",
-            category="Discovery",
-            rule_name="System User Discovery",
-            conditions=[
-                {"field": "process.comm", "op": "in", "value": ["whoami", "id", "groups", "last"]}
-            ],
-            detection_method="advanced_json",
-            base_score=40,
-            severity="Medium",
-            mitre_technique_id="T1087.001",
-            mitre_tactic="Discovery",
-            reference_url="https://github.com/SigmaHQ/sigma/blob/master/rules/linux/process_creation/proc_creation_lnx_user_discovery.yml",
-            description="사용자 계정 및 권한 정보를 확인하는 명령이 실행되었습니다. 시스템 정찰 행위로 판단됩니다."
-        ),
-        DetectionRule(
-            target_topic="tetragon.process",
-            category="Discovery",
-            rule_name="Network Configuration Discovery",
-            conditions=[
-                {"field": "process.comm", "op": "in", "value": ["ifconfig", "ip", "netstat", "ss", "route"]}
-            ],
-            detection_method="advanced_json",
-            base_score=40,
-            severity="Medium",
-            mitre_technique_id="T1016",
-            mitre_tactic="Discovery",
-            description="네트워크 설정 및 연결 상태를 확인하는 명령이 실행되었습니다. 내부 이동을 위한 정찰 활동일 수 있습니다."
-        ),
-        DetectionRule(
-            target_topic="tetragon.process",
-            category="Credential Access",
-            rule_name="Shadow File Read Attempt",
-            conditions=[
-                {"field": "process.args", "op": "contains", "value": "/etc/shadow"}
-            ],
-            detection_method="advanced_json",
-            base_score=90,
-            severity="Critical",
-            mitre_technique_id="T1003.008",
-            mitre_tactic="Credential Access",
-            description="민감한 계정 정보 파일(/etc/shadow)에 대한 접근 시도가 탐지되었습니다. 비밀번호 크래킹 시도로 보입니다."
-        ),
-        DetectionRule(
-            target_topic="tetragon.process",
-            category="Discovery",
-            rule_name="Process Listing Discovery",
-            conditions=[
-                {"field": "process.comm", "op": "in", "value": ["ps", "top", "htop"]}
-            ],
-            detection_method="advanced_json",
-            base_score=40,
-            severity="Medium",
-            mitre_technique_id="T1057",
-            mitre_tactic="Discovery",
-            description="실행 중인 프로세스 목록을 조회했습니다. 시스템 환경 및 보안 솔루션 탐색 행위입니다."
-        )
+        DetectionRule(target_topic="tetragon.process", category="Discovery & Credential Access", rule_name="WordPress Config Access", conditions=[{"field": "process.args", "op": "contains", "value": "wp-config.php"}, {"field": "process.comm", "op": "in", "value": ["cat", "grep", "vi", "nano"]}], detection_method="advanced_json", base_score=55, severity="High", mitre_technique_id="T1552.001", mitre_tactic="Credential Access", description="WP 설정 파일 접근 탐지."),
+        DetectionRule(target_topic="tetragon.process", category="Discovery", rule_name="System User Discovery", conditions=[{"field": "process.comm", "op": "in", "value": ["whoami", "id", "groups", "last"]}], detection_method="advanced_json", base_score=15, severity="Medium", mitre_technique_id="T1087.001", mitre_tactic="Discovery", description="사용자 정보 정찰 탐지."),
+        DetectionRule(target_topic="tetragon.process", category="Discovery", rule_name="Network Configuration Discovery", conditions=[{"field": "process.comm", "op": "in", "value": ["ifconfig", "ip", "netstat", "ss", "route"]}], detection_method="advanced_json", base_score=15, severity="Medium", mitre_technique_id="T1016", mitre_tactic="Discovery", description="네트워크 설정 정찰 탐지."),
+        DetectionRule(target_topic="tetragon.process", category="Credential Access", rule_name="Shadow File Read Attempt", conditions=[{"field": "process.args", "op": "contains", "value": "/etc/shadow"}], detection_method="advanced_json", base_score=70, severity="Critical", mitre_technique_id="T1003.008", mitre_tactic="Credential Access", description="/etc/shadow 접근 탐지."),
+        DetectionRule(target_topic="tetragon.process", category="Discovery", rule_name="Process Listing Discovery", conditions=[{"field": "process.comm", "op": "in", "value": ["ps", "top", "htop"]}], detection_method="advanced_json", base_score=15, severity="Medium", mitre_technique_id="T1057", mitre_tactic="Discovery", description="프로세스 목록 조회 탐지.")
     ]
 
     # 3. 권한 상승 및 지속성 유지
     persistence_escalation_rules = [
-        # 1. Sudoers 파일 변조 (Persistence / Priv Esc)
-        DetectionRule(
-            target_topic="tetragon.process",
-            category="Persistence & Privilege Escalation",
-            rule_name="Sudoers Modification via Command Line",
-            conditions=[
-                {"field": "process.args", "op": "contains", "value": "/etc/sudoers"},
-                {"field": "process.comm", "op": "in", "value": ["echo", "sed", "tee", "visudo"]}
-            ],
-            detection_method="advanced_json",
-            base_score=90,
-            severity="Critical",
-            mitre_technique_id="T1548.003",
-            mitre_tactic="Persistence",
-            reference_url="https://github.com/SigmaHQ/sigma/blob/master/rules/linux/auditd/lnx_auditd_sudoers_modification.yml",
-            description="권한 상승을 위해 sudoers 설정 파일을 직접 수정하려는 시도가 탐지되었습니다."
-        ),
-        
-        # 2. 크론탭을 이용한 지속성 확보 (Persistence)
-        DetectionRule(
-            target_topic="tetragon.process",
-            category="Persistence",
-            rule_name="Scheduled Task Creation via Crontab",
-            conditions=[
-                {"field": "process.comm", "op": "equal", "value": "crontab"},
-                {"field": "process.args", "op": "contains", "value": "-e"}
-            ],
-            detection_method="advanced_json",
-            base_score=70,
-            severity="High",
-            mitre_technique_id="T1053.003",
-            mitre_tactic="Persistence",
-            description="crontab을 이용한 예약 작업 등록이 포착되었습니다. 악성 코드의 자동 재실행을 위한 설정일 수 있습니다."
-        ),
-
-        # 3. 비정상 서비스 등록 (Persistence)
-        DetectionRule(
-            target_topic="tetragon.process",
-            category="Persistence",
-            rule_name="Suspicious Service Unit Creation",
-            conditions=[
-                {"field": "process.comm", "op": "equal", "value": "systemctl"},
-                {"field": "process.args", "op": "contains", "value": "enable"}
-            ],
-            detection_method="advanced_json",
-            base_score=75,
-            severity="High",
-            mitre_technique_id="T1543.002",
-            mitre_tactic="Persistence",
-            description="systemd 유닛 등록을 통해 시스템 서비스로 백도어를 유지하려는 행위가 의심됩니다."
-        ),
-
-        # 4. SUID 바이너리 악용 (Privilege Escalation)
-        DetectionRule(
-            target_topic="tetragon.process",
-            category="Privilege Escalation",
-            rule_name="Abuse of Setuid Binaries",
-            conditions=[
-                {"field": "process.comm", "op": "in", "value": ["find", "python", "perl", "lua"]},
-                {"field": "process.args", "op": "contains", "value": "exec"}
-            ],
-            detection_method="advanced_json",
-            base_score=85,
-            severity="Critical",
-            mitre_technique_id="T1548.001",
-            mitre_tactic="Privilege Escalation",
-            description="SUID 권한이 설정된 정상 도구(find 등)를 이용해 루트 권한으로 명령을 실행하려는 시도입니다."
-        ),
-
-        # 5. 권한 조사 행위 (Discovery / Priv Esc)
-        DetectionRule(
-            target_topic="tetragon.process",
-            category="Privilege Escalation",
-            rule_name="Capabilities Discovery",
-            conditions=[
-                {"field": "process.comm", "op": "equal", "value": "getcap"},
-                {"field": "process.args", "op": "contains", "value": "-r"}
-            ],
-            detection_method="advanced_json",
-            base_score=65,
-            severity="High",
-            mitre_technique_id="T1611",
-            mitre_tactic="Privilege Escalation",
-            reference_url="https://github.com/SigmaHQ/sigma/blob/master/rules/linux/auditd/lnx_auditd_capabilities_discovery.yml",
-            description="권한 상승이나 컨테이너 탈출을 위해 시스템의 특수 권한(Capabilities)을 정찰 중입니다."
-        )
+        DetectionRule(target_topic="tetragon.process", category="Persistence & Privilege Escalation", rule_name="Sudoers Modification via Command Line", conditions=[{"field": "process.args", "op": "contains", "value": "/etc/sudoers"}, {"field": "process.comm", "op": "in", "value": ["echo", "sed", "tee", "visudo"]}], detection_method="advanced_json", base_score=70, severity="Critical", mitre_technique_id="T1548.003", mitre_tactic="Persistence", description="sudoers 파일 무단 수정 탐지."),
+        DetectionRule(target_topic="tetragon.process", category="Persistence", rule_name="Scheduled Task Creation via Crontab", conditions=[{"field": "process.comm", "op": "equal", "value": "crontab"}, {"field": "process.args", "op": "contains", "value": "-e"}], detection_method="advanced_json", base_score=45, severity="High", mitre_technique_id="T1053.003", mitre_tactic="Persistence", description="crontab 예약 작업 등록 탐지."),
+        DetectionRule(target_topic="tetragon.process", category="Persistence", rule_name="Suspicious Service Unit Creation", conditions=[{"field": "process.comm", "op": "equal", "value": "systemctl"}, {"field": "process.args", "op": "contains", "value": "enable"}], detection_method="advanced_json", base_score=50, severity="High", mitre_technique_id="T1543.002", mitre_tactic="Persistence", description="systemd 서비스 유닛 등록 탐지."),
+        DetectionRule(target_topic="tetragon.process", category="Privilege Escalation", rule_name="Abuse of Setuid Binaries", conditions=[{"field": "process.comm", "op": "in", "value": ["find", "python", "perl", "lua"]}, {"field": "process.args", "op": "contains", "value": "exec"}], detection_method="advanced_json", base_score=65, severity="Critical", mitre_technique_id="T1548.001", mitre_tactic="Privilege Escalation", description="SUID 바이너리 악용 실행 탐지."),
+        DetectionRule(target_topic="tetragon.process", category="Privilege Escalation", rule_name="Capabilities Discovery", conditions=[{"field": "process.comm", "op": "equal", "value": "getcap"}, {"field": "process.args", "op": "contains", "value": "-r"}], detection_method="advanced_json", base_score=40, severity="High", mitre_technique_id="T1611", mitre_tactic="Privilege Escalation", description="시스템 특수 권한 정찰 탐지.")
     ]
 
-    # 4. 방어 회피 (Defense Evasion) - Sigma HQ Rules 기반 설계
+    # 4. 방어 회피 (Defense Evasion)
     defense_evasion_rules = [
-        DetectionRule(
-            target_topic="tetragon.process",
-            category="Defense Evasion",
-            rule_name="Bash History Indicator Removal",
-            conditions=[
-                {"field": "process.comm", "op": "in", "value": ["rm", "truncate"]},
-                {"field": "process.args", "op": "contains", "value": ".bash_history"}
-            ],
-            detection_method="advanced_json",
-            base_score=80,
-            severity="High",
-            mitre_technique_id="T1070.003",
-            mitre_tactic="Defense Evasion",
-            reference_url="https://github.com/SigmaHQ/sigma/blob/master/rules/linux/auditd/lnx_auditd_susp_histfile_operations.yml",
-            description="쉘 명령 기록 파일(.bash_history)에 대한 삭제 또는 변조 시도가 탐지되었습니다. 침투 흔적 인멸 행위로 의심됩니다."
-        ),
-        DetectionRule(
-            target_topic="tetragon.process",
-            category="Defense Evasion",
-            rule_name="File Timestomping via Touch",
-            conditions=[
-                {"field": "process.comm", "op": "equal", "value": "touch"},
-                {"field": "process.args", "op": "in", "value": ["-r", "-t", "--timestamp"]}
-            ],
-            detection_method="advanced_json",
-            base_score=60,
-            severity="Medium",
-            mitre_technique_id="T1070.006",
-            mitre_tactic="Defense Evasion",
-            reference_url="https://github.com/SigmaHQ/sigma/blob/master/rules/linux/auditd/lnx_auditd_change_file_time_attr.yml",
-            description="touch 명령어를 이용한 파일 타임스탬프 조작이 탐지되었습니다. 포렌식 분석을 방해하려는 시도일 수 있습니다."
-        ),
-        DetectionRule(
-            target_topic="tetragon.process",
-            category="Defense Evasion",
-            rule_name="Immutable Attribute Removal",
-            conditions=[
-                {"field": "process.comm", "op": "equal", "value": "chattr"},
-                {"field": "process.args", "op": "contains", "value": "-i"}
-            ],
-            detection_method="advanced_json",
-            base_score=75,
-            severity="High",
-            mitre_technique_id="T1222.002",
-            mitre_tactic="Defense Evasion",
-            reference_url="https://github.com/SigmaHQ/sigma/blob/master/rules/linux/auditd/lnx_auditd_chattr_immutable_removal.yml",
-            description="파일의 불변(Immutable) 속성 강제 제거가 탐지되었습니다. 시스템 보호 설정 무력화 시도가 의심됩니다."
-        ),
-        DetectionRule(
-            target_topic="tetragon.process",
-            category="Defense Evasion",
-            rule_name="Audit Service Tampering",
-            conditions=[
-                {"field": "process.comm", "op": "in", "value": ["systemctl", "service"]},
-                {"field": "process.args", "op": "contains", "value": "stop"},
-                {"field": "process.args", "op": "contains", "value": "auditd"}
-            ],
-            detection_method="advanced_json",
-            base_score=90,
-            severity="Critical",
-            mitre_technique_id="T1562.001",
-            mitre_tactic="Defense Evasion",
-            description="보안 감사 서비스(auditd) 중단 시도가 탐지되었습니다. 시스템 감시 체계를 무력화하려는 고위험 공격 행위입니다."
-        ),
-        DetectionRule(
-            target_topic="tetragon.process",
-            category="Defense Evasion",
-            rule_name="Hidden Files and Directories Creation",
-            conditions=[
-                {"field": "process.args", "op": "contains", "value": "/. "},  # 숨김 폴더 생성 패턴
-                {"field": "process.comm", "op": "in", "value": ["mkdir", "touch"]}
-            ],
-            detection_method="advanced_json",
-            base_score=50,
-            severity="Medium",
-            mitre_technique_id="T1564.001",
-            mitre_tactic="Defense Evasion",
-            reference_url="https://github.com/SigmaHQ/sigma/blob/master/rules/linux/auditd/lnx_auditd_hidden_files_directories.yml",
-            description="시스템 내 숨김 디렉토리 또는 파일 생성이 탐지되었습니다. 악성 코드나 유출 데이터를 은닉하기 위한 시도일 수 있습니다."
-        )
+        DetectionRule(target_topic="tetragon.process", category="Defense Evasion", rule_name="Bash History Indicator Removal", conditions=[{"field": "process.comm", "op": "in", "value": ["rm", "truncate"]}, {"field": "process.args", "op": "contains", "value": ".bash_history"}], detection_method="advanced_json", base_score=55, severity="High", mitre_technique_id="T1070.003", mitre_tactic="Defense Evasion", description="명령 기록(.bash_history) 변조 탐지."),
+        DetectionRule(target_topic="tetragon.process", category="Defense Evasion", rule_name="File Timestomping via Touch", conditions=[{"field": "process.comm", "op": "equal", "value": "touch"}, {"field": "process.args", "op": "in", "value": ["-r", "-t", "--timestamp"]}], detection_method="advanced_json", base_score=35, severity="Medium", mitre_technique_id="T1070.006", mitre_tactic="Defense Evasion", description="파일 타임스탬프 조작 탐지."),
+        DetectionRule(target_topic="tetragon.process", category="Defense Evasion", rule_name="Immutable Attribute Removal", conditions=[{"field": "process.comm", "op": "equal", "value": "chattr"}, {"field": "process.args", "op": "contains", "value": "-i"}], detection_method="advanced_json", base_score=50, severity="High", mitre_technique_id="T1222.002", mitre_tactic="Defense Evasion", description="파일 불변(Immutable) 속성 제거 탐지."),
+        DetectionRule(target_topic="tetragon.process", category="Defense Evasion", rule_name="Audit Service Tampering", conditions=[{"field": "process.comm", "op": "in", "value": ["systemctl", "service"]}, {"field": "process.args", "op": "contains", "value": "stop"}, {"field": "process.args", "op": "contains", "value": "auditd"}], detection_method="advanced_json", base_score=70, severity="Critical", mitre_technique_id="T1562.001", mitre_tactic="Defense Evasion", description="감사 서비스(auditd) 중단 시도 탐지."),
+        DetectionRule(target_topic="tetragon.process", category="Defense Evasion", rule_name="Hidden Files and Directories Creation", conditions=[{"field": "process.args", "op": "contains", "value": "/. "}, {"field": "process.comm", "op": "in", "value": ["mkdir", "touch"]}], detection_method="advanced_json", base_score=25, severity="Medium", mitre_technique_id="T1564.001", mitre_tactic="Defense Evasion", description="숨김 파일/디렉토리 생성 탐지.")
     ]
 
+    # 5. 유출 및 영향 (Exfiltration & Impact)
     exfiltration_impact_rules = [
-        # 1. 유출용 데이터 압축 (Exfiltration)
-        DetectionRule(
-            target_topic="tetragon.process",
-            category="Exfiltration",
-            rule_name="Data Compressed for Exfiltration",
-            conditions=[
-                {"field": "process.comm", "op": "in", "value": ["tar", "zip", "gzip", "7z"]},
-                {"field": "process.args", "op": "contains", "value": "/var/www/html"} # 웹 루트 압축 감시
-            ],
-            detection_method="advanced_json",
-            base_score=55,
-            severity="Medium",
-            mitre_technique_id="T1560.001",
-            mitre_tactic="Exfiltration",
-            reference_url="https://github.com/SigmaHQ/sigma/blob/master/rules/linux/auditd/lnx_auditd_data_compressed.yml",
-            description="웹 루트 디렉토리를 압축하려는 시도가 탐지되었습니다. 데이터 유출을 위한 사전 준비일 수 있습니다."
-        ),
-        
-        # 2. 웹 도구를 이용한 데이터 유출 (Exfiltration)
-        DetectionRule(
-            target_topic="tetragon.process",
-            category="Exfiltration",
-            rule_name="Data Exfiltration via Wget/Curl",
-            conditions=[
-                {"field": "process.comm", "op": "in", "value": ["curl", "wget"]},
-                {"field": "process.args", "op": "contains_any", "value": ["--post-data", "--post-file", "--upload-file"]}
-            ],
-            detection_method="advanced_json",
-            base_score=80,
-            severity="High",
-            mitre_technique_id="T1048.003",
-            mitre_tactic="Exfiltration",
-            reference_url="https://github.com/SigmaHQ/sigma/blob/master/rules/linux/auditd/lnx_auditd_data_exfil_wget.yml",
-            description="curl 또는 wget을 이용해 데이터를 외부 서버로 전송하려는 시도가 탐지되었습니다."
-        ),
-
-        # 3. 데이터베이스 덤프 접근 (Collection / Exfiltration)
-        DetectionRule(
-            target_topic="tetragon.process",
-            category="Exfiltration",
-            rule_name="Sensitive Database Dump Access",
-            conditions=[
-                {"field": "process.args", "op": "contains", "value": ".sql"},
-                {"field": "process.comm", "op": "in", "value": ["cat", "grep", "tar"]}
-            ],
-            detection_method="advanced_json",
-            base_score=85,
-            severity="Critical",
-            mitre_technique_id="T1530",
-            mitre_tactic="Exfiltration",
-            description="데이터베이스 덤프 파일(.sql)에 대한 비정상적인 접근이 탐지되었습니다. 기밀 데이터 유출 위험이 매우 높습니다."
-        ),
-
-        # 4. 핵심 서비스 중단 (Impact)
-        DetectionRule(
-            target_topic="tetragon.process",
-            category="Impact",
-            rule_name="Service Disruption (Stop/Disable)",
-            conditions=[
-                {"field": "process.comm", "op": "equal", "value": "systemctl"},
-                {"field": "process.args", "op": "contains", "value": "stop"},
-                {"field": "process.args", "op": "contains_any", "value": ["nginx", "mysql", "mariadb", "php-fpm"]}
-            ],
-            detection_method="advanced_json",
-            base_score=75,
-            severity="High",
-            mitre_technique_id="T1489",
-            mitre_tactic="Impact",
-            description="Nginx 또는 DB와 같은 핵심 웹 서비스의 중단 시도가 탐지되었습니다. 가용성 침해 공격(DoS)일 수 있습니다."
-        ),
-
-        # 5. 시스템 강제 종료/재부팅 (Impact)
-        DetectionRule(
-            target_topic="tetragon.process",
-            category="Impact",
-            rule_name="Unauthorized System Shutdown/Reboot",
-            conditions=[
-                {"field": "process.comm", "op": "in", "value": ["reboot", "shutdown", "halt", "poweroff"]}
-            ],
-            detection_method="advanced_json",
-            base_score=90,
-            severity="Critical",
-            mitre_technique_id="T1529",
-            mitre_tactic="Impact",
-            reference_url="https://github.com/SigmaHQ/sigma/blob/master/rules/linux/auditd/lnx_auditd_system_shutdown_reboot.yml",
-            description="인가되지 않은 시스템 종료 또는 재부팅 명령이 실행되었습니다. 서비스 전체 마비 및 데이터 파괴 위험이 있습니다."
-        )
+        DetectionRule(target_topic="tetragon.process", category="Exfiltration", rule_name="Data Compressed for Exfiltration", conditions=[{"field": "process.comm", "op": "in", "value": ["tar", "zip", "gzip", "7z"]}, {"field": "process.args", "op": "contains", "value": "/var/www/html"}], detection_method="advanced_json", base_score=30, severity="Medium", mitre_technique_id="T1560.001", mitre_tactic="Exfiltration", description="웹 루트 디렉토리 압축 탐지."),
+        DetectionRule(target_topic="tetragon.process", category="Exfiltration", rule_name="Data Exfiltration via Wget/Curl", conditions=[{"field": "process.comm", "op": "in", "value": ["curl", "wget"]}, {"field": "process.args", "op": "contains_any", "value": ["--post-data", "--post-file", "--upload-file"]}], detection_method="advanced_json", base_score=55, severity="High", mitre_technique_id="T1048.003", mitre_tactic="Exfiltration", description="외부 데이터 전송 시도 탐지."),
+        DetectionRule(target_topic="tetragon.process", category="Exfiltration", rule_name="Sensitive Database Dump Access", conditions=[{"field": "process.args", "op": "contains", "value": ".sql"}, {"field": "process.comm", "op": "in", "value": ["cat", "grep", "tar"]}], detection_method="advanced_json", base_score=65, severity="Critical", mitre_technique_id="T1530", mitre_tactic="Exfiltration", description="DB 덤프 파일 비정상 접근 탐지."),
+        DetectionRule(target_topic="tetragon.process", category="Impact", rule_name="Service Disruption (Stop/Disable)", conditions=[{"field": "process.comm", "op": "equal", "value": "systemctl"}, {"field": "process.args", "op": "contains", "value": "stop"}, {"field": "process.args", "op": "contains_any", "value": ["nginx", "mysql", "mariadb", "php-fpm"]}], detection_method="advanced_json", base_score=50, severity="High", mitre_technique_id="T1489", mitre_tactic="Impact", description="핵심 웹 서비스 중단 시도 탐지."),
+        DetectionRule(target_topic="tetragon.process", category="Impact", rule_name="Unauthorized System Shutdown/Reboot", conditions=[{"field": "process.comm", "op": "in", "value": ["reboot", "shutdown", "halt", "poweroff"]}], detection_method="advanced_json", base_score=70, severity="Critical", mitre_technique_id="T1529", mitre_tactic="Impact", description="비인가 시스템 종료/재부팅 명령 탐지.")
     ]
-    # --- 기존에 정의된 다른 그룹의 룰이 있다면 여기에 추가 가능 ---
-    all_rules = initial_access_rules + discovery_credential_rules + persistence_escalation_rules + defense_evasion_rules + exfiltration_impact_rules
-    # -----------------------------------------------------
+
+    # 1. 프로세스 실행 (Execution)
+    process_rules = [
+        DetectionRule(target_topic="tetragon.process", category="Execution", rule_name="Fileless Execution via memfd_create", conditions=[{"field": "process.syscall", "op": "in", "value": ["memfd_create"]}, {"field": "process.exe", "op": "startswith", "value": "/proc/self/fd"}], detection_method="advanced_json", base_score=70, severity="Critical", mitre_technique_id="T1620", mitre_tactic="Execution", description="메모리 기반(Fileless) 실행 탐지."),
+        DetectionRule(target_topic="tetragon.process", category="Privilege Escalation", rule_name="SUID/SGID Binary Execution", conditions=[{"field": "process.file_mode", "op": "contains", "value": "suid"}], detection_method="advanced_json", base_score=45, severity="High", mitre_technique_id="T1548.001", mitre_tactic="Privilege Escalation", description="SUID 비트 설정 파일 실행 탐지."),
+        DetectionRule(target_topic="tetragon.process", category="Discovery", rule_name="Short-Lived Process Burst", conditions=[{"field": "process.duration_ms", "op": "lt", "value": 1000}, {"field": "process.burst_count", "op": "gte", "value": 10}], detection_method="advanced_json", base_score=30, severity="Medium", mitre_technique_id="T1059", mitre_tactic="Execution", description="단명 프로세스 대량 생성 탐지.")
+    ]
+
+    # 2. 권한 / 자격증명 (Privilege & Credentials)
+    privilege_rules = [
+        DetectionRule(target_topic="tetragon.process", category="Credential Access", rule_name="Passwd/Shadow File Write", conditions=[{"field": "process.args", "op": "contains_any", "value": ["/etc/passwd", "/etc/shadow"]}, {"field": "event.type", "op": "equal", "value": "file_write"}], detection_method="advanced_json", base_score=70, severity="Critical", mitre_technique_id="T1098", mitre_tactic="Credential Access", description="계정 정보 파일 수정 탐지."),
+        DetectionRule(target_topic="tetragon.process", category="Privilege Escalation", rule_name="Setuid Zero Call", conditions=[{"field": "process.syscall", "op": "in", "value": ["setuid", "setgid"]}, {"field": "process.syscall_arg0", "op": "equal", "value": 0}], detection_method="advanced_json", base_score=65, severity="Critical", mitre_technique_id="T1068", mitre_tactic="Privilege Escalation", description="루트 권한 획득 시스템 콜 탐지."),
+        DetectionRule(target_topic="tetragon.process", category="Privilege Escalation", rule_name="Dangerous Capability Addition", conditions=[{"field": "process.comm", "op": "equal", "value": "setcap"}, {"field": "process.args", "op": "contains_any", "value": ["cap_sys_admin", "cap_net_admin", "cap_sys_ptrace"]}], detection_method="advanced_json", base_score=55, severity="High", mitre_technique_id="T1611", mitre_tactic="Privilege Escalation", description="위험 권한(Capability) 추가 탐지.")
+    ]
+
+    # 3. 네트워크 (Network)
+    network_rules = [
+        DetectionRule(target_topic="tetragon.network", category="Command and Control", rule_name="Known C2 IP/Domain Connection", conditions=[{"field": "network.dst_ip", "op": "ioc_match", "value": "ip_blocklist"}], detection_method="advanced_json", base_score=70, severity="Critical", mitre_technique_id="T1090", mitre_tactic="Command and Control", description="알려진 C2 IP 연결 탐지."),
+        DetectionRule(target_topic="tetragon.network", category="Command and Control", rule_name="Reverse Shell Pattern Detected", conditions=[{"field": "process.comm", "op": "in", "value": ["bash", "sh", "nc", "socat"]}, {"field": "network.direction", "op": "equal", "value": "outbound"}], detection_method="advanced_json", base_score=65, severity="Critical", mitre_technique_id="T1021", mitre_tactic="Command and Control", description="리버스 셸 패턴 탐지."),
+        DetectionRule(target_topic="tetragon.network", category="Exfiltration", rule_name="Large Outbound Data Transfer", conditions=[{"field": "network.bytes_sent", "op": "gte", "value": 10485760}], detection_method="advanced_json", base_score=50, severity="High", mitre_technique_id="T1041", mitre_tactic="Exfiltration", description="대용량 외부 데이터 전송 탐지.")
+    ]
+
+        # 4. 파일 시스템 (File)
+    file_rules = [
+        DetectionRule(target_topic="tetragon.file", category="Impact", rule_name="Ransomware Pattern File Creation", conditions=[{"field": "file.name", "op": "endswith_list", "value": [".locked", ".enc", ".crypt"]}], detection_method="advanced_json", base_score=70, severity="Critical", mitre_technique_id="T1486", mitre_tactic="Impact", description="랜섬웨어 의심 파일 생성 탐지."),
+        DetectionRule(target_topic="tetragon.file", category="Defense Evasion", rule_name="LD_PRELOAD Library Hijacking", conditions=[{"field": "file.path", "op": "equal", "value": "/etc/ld.so.preload"}], detection_method="advanced_json", base_score=65, severity="Critical", mitre_technique_id="T1574.006", mitre_tactic="Defense Evasion", description="라이브러리 하이재킹 시도 탐지.")
+    ]
+
+    # 5. 클라우드 VM 특화 (Cloud)
+    cloud_rules = [
+        DetectionRule(target_topic="tetragon.network", category="Credential Access", rule_name="IMDSv1 Endpoint Direct Access", conditions=[{"field": "network.dst_ip", "op": "equal", "value": "169.254.169.254"}], detection_method="advanced_json", base_score=70, severity="Critical", mitre_technique_id="T1552.005", mitre_tactic="Credential Access", description="클라우드 자격증명 탈취 시도 탐지.")
+    ]
+
+    # 6. 커널 / 시스템 콜 (Kernel)
+    kernel_rules = [
+        DetectionRule(target_topic="tetragon.process", category="Persistence", rule_name="Kernel Module Load", conditions=[{"field": "process.syscall", "op": "in", "value": ["init_module", "finit_module"]}], detection_method="advanced_json", base_score=70, severity="Critical", mitre_technique_id="T1547.006", mitre_tactic="Persistence", description="비인가 커널 모듈 삽입 탐지.")
+    ]
+
+    # 7. WordPress 특화 (WP)
+    wordpress_rules = [
+        DetectionRule(target_topic="tetragon.network", category="Credential Access", rule_name="WordPress Login Brute Force", conditions=[{"field": "network.http_uri", "op": "contains", "value": "/wp-login.php"}], detection_method="advanced_json", base_score=25, severity="Medium", mitre_technique_id="T1110.001", mitre_tactic="Credential Access", description="WP 로그인 무차별 대입 탐지."),
+        DetectionRule(target_topic="tetragon.process", category="Initial Access", rule_name="WordPress Plugin RCE via Child Process", conditions=[{"field": "process.parent_args", "op": "contains", "value": "/wp-content/plugins/"}], detection_method="advanced_json", base_score=45, severity="High", mitre_technique_id="T1190", mitre_tactic="Initial Access", description="WP 플러그인 RCE 의심 행위 탐지.")
+    ]
+
+    # 합산 및 중복 방지 삽입
+    all_new_rules = process_rules + privilege_rules + network_rules + file_rules + cloud_rules + kernel_rules + wordpress_rules
+    inserted = 0
+    for rule in all_new_rules:
+        if not db.query(DetectionRule).filter(DetectionRule.rule_name == rule.rule_name).first():
+            db.add(rule)
+            inserted += 1
+
+    all_rules = initial_access_rules + discovery_credential_rules + persistence_escalation_rules + defense_evasion_rules + exfiltration_impact_rules+process_rules+privilege_rules+network_rules+file_rules+cloud_rules+kernel_rules+wordpress_rules
 
     try:
-        # 중복 방지를 위해 기존 룰을 모두 삭제하거나, rule_name 기준으로 존재 여부 확인 후 삽입 권장
-        # 여기서는 단순 add_all을 사용합니다.
         db.add_all(all_rules)
         db.commit()
-        print(f"Successfully seeded {len(all_rules)} detection rules.")
+        print(f"✅ {len(all_rules)}개의 탐지 룰 최적화 점수 반영 완료")
     except Exception as e:
         db.rollback()
-        print(f"Error during seeding: {e}")
+        print(f"❌ Error during seeding: {e}")
 
 if __name__ == "__main__":
     seed_db()

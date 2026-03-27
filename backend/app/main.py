@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from datetime import datetime
 from dotenv import load_dotenv
 from fastapi import FastAPI, Depends, Request
 from fastapi.responses import JSONResponse
@@ -8,12 +9,15 @@ from sqlalchemy.orm import Session
 from neo4j import GraphDatabase
 from sqlalchemy import text
 from .core.config import os_client
-from .database import engine, get_db
+from .database import engine, get_db, SessionLocal
 from . import models
 # 분리한 라우터 임포트
 from .api.auth.router import router as auth_router
 from .api.dashboard.router import router as dashboard_router
 from .api.assets.router import router as assets_router
+from .api.dashboard.service import DashboardService
+from apscheduler.schedulers.background import BackgroundScheduler
+#from .api.policy.router import router as policy_router  # 정책 라우터 임포트
 from .api.policy.router import router as policy_router  # 정책 라우터 임포트
 from .api.forensic.router import router as forensic_router  # 포렌식 라우터 임포트
 
@@ -46,7 +50,7 @@ async def ip_filter_middleware(request: Request, call_next):
     return response
 
 # DB 테이블 생성
-# models.Base.metadata.create_all(bind=engine)
+models.Base.metadata.create_all(bind=engine)
 
 app.add_middleware(
     CORSMiddleware,
@@ -71,6 +75,24 @@ app.include_router(forensic_router)
 NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
 NEO4J_URI = "bolt://localhost:7687"
 NEO4J_USER = "neo4j"
+
+# --- [스케줄러 설정] ---
+def update_dashboard_task():
+    db = SessionLocal()
+    try:
+        print(f"🔄 [Sync] 대시보드 데이터 동기화 시작 ({datetime.now()})")
+        DashboardService.sync_alerts_from_os(db)
+    finally:
+        db.close()
+
+scheduler = BackgroundScheduler()
+# 1분마다 실행하려면 minutes=1, 10분마다 실행하려면 minutes=10으로 수정하세요!
+scheduler.add_job(update_dashboard_task, 'interval', minutes=1) 
+scheduler.start()
+
+@app.on_event("shutdown")
+def shutdown_event():
+    scheduler.shutdown()
 
 @app.get("/health")
 def health_check(db: Session = Depends(get_db)):

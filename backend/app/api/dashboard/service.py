@@ -1,56 +1,70 @@
-from ...main import os_client # main에 선언된 os_client 사용
 from sqlalchemy.orm import Session
 from ...models import TopAlert
-from datetime import datetime
-from ...core.config import os_client
+from datetime import datetime, timezone
+from ...core.config import os_client  # core/config.py에 정의된 os_client 사용
 
 class DashboardService:
     @staticmethod
     def sync_alerts_from_os(db: Session):
-        """OpenSearch에서 고위험 로그를 가져와 DB에 동기화 (중복 제외)"""
+        """
+        OpenSearch의 'security-alerts-*' 인덱스에서 
+        위험도 연산이 완료된 실제 알람을 가져와 DB에 동기화합니다.
+        """
+        # 1. OpenSearch 쿼리: 최신 알람 10개를 가져옴
         query = {
-            "size": 10, # 여유있게 10개 가져옴
-            "sort": [{"@timestamp": {"order": "desc"}}],
+            "size": 10,
+            "sort": [{"processed_at": {"order": "desc"}}], # 처리 시간 기준 최신순
             "query": {
-                "bool": {
-                    "should": [
-                        {"match": {"event_type": "edr.process.exec"}},
-                        {"match": {"event_type": "edr.network.flow"}}
-                    ],
-                    "minimum_should_match": 1
-                }
+                "match_all": {} # security-alerts 인덱스 자체가 탐지된 것만 있으므로 전체 조회
             }
         }
         
-        response = os_client.search(index="ebpf-logs-*", body=query)
-        
+        try:
+            # 인덱스를 가짜 데이터(ebpf-logs)가 아닌 실제 알람 인덱스로 변경
+            response = os_client.search(index="security-alerts-*", body=query)
+        except Exception as e:
+            print(f"❌ OpenSearch 조회 오류: {e}")
+            return
+
         for hit in response['hits']['hits']:
             src = hit['_source']
-            eid = hit['_id']
+            # OpenSearch 문서 ID를 고유값으로 사용 (중복 저장 방지)
+            eid = hit['_id'] 
             
-            # 중복 체크
+            # DB 중복 체크
             exists = db.query(TopAlert).filter(TopAlert.event_id == eid).first()
             if not exists:
-                # 목업처럼 한글 이름 매핑 (예시)
-                name_map = {
-                    "edr.process.exec": "미확인 프로세스 실행 탐지",
-                    "edr.network.flow": "비정상 네트워크 커넥션",
-                    "edr.auth.sudo": "권한 상승 시도 탐지"
-                }
+                # risk_info 필드에서 계산된 데이터 추출
+                risk = src.get("risk_info", {})
+                host = src.get("host", {})
                 
+                # 타임스탬프 처리 (float 형태의 Unix Timestamp를 datetime으로 변환)
+                raw_ts = src.get("@timestamp", datetime.now(timezone.utc).timestamp())
+                dt_object = datetime.fromtimestamp(raw_ts, tz=timezone.utc)
+
                 new_alert = TopAlert(
                     event_id=eid,
-                    severity="CRITICAL" if src.get("event_type") == "edr.process.exec" else "HIGH",
-                    alert_name=name_map.get(src.get("event_type"), "의심 행위 탐지"),
-                    host_info=f"{src['host']['hostname']} ({src['host']['host_id']})",
-                    # ISO 포맷 시간을 Python datetime으로 변환
-                    event_time=datetime.fromisoformat(src['@timestamp'].replace('Z', '+00:00'))
+                    # 우리가 연산한 severity (Critical, High 등)를 그대로 대문자로 저장
+                    severity=risk.get("severity", "LOW").upper(),
+                    # 우리가 정한 rule_name을 알람명으로 사용
+                    alert_name=risk.get("rule_name", "미분류 위협"),
+                    # 호스트명과 IP를 합쳐서 가독성 있게 저장
+                    host_info=f"{host.get('hostname', 'unknown')} ({host.get('ip', '0.0.0.0')})",
+                    event_time=dt_object
                 )
                 db.add(new_alert)
         
-        db.commit()
+        try:
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            print(f"❌ DB 저장 오류: {e}")
 
     @staticmethod
     def get_top_5_alerts(db: Session):
-        """DB에서 최신 고위험 알람 5개만 가져옴"""
-        return db.query(TopAlert).order_by(TopAlert.event_time.desc()).limit(5).all()
+        """DB에서 최신 고위험 알람 5개만 반환 (프론트엔드 이미지 규격)"""
+        # Critical이 먼저 오고, 그 다음 최신순으로 정렬하여 상위 5개 추출
+        return db.query(TopAlert)\
+                 .order_by(TopAlert.severity == "CRITICAL", TopAlert.event_time.desc())\
+                 .limit(5)\
+                 .all()
