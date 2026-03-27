@@ -15,6 +15,7 @@ from .api.auth.router import router as auth_router
 from .api.dashboard.router import router as dashboard_router
 from .api.assets.router import router as assets_router
 from .api.policy.router import router as policy_router  # 정책 라우터 임포트
+from .api.forensic.router import router as forensic_router  # 포렌식 라우터 임포트
 
 env_path = Path(__file__).resolve().parent.parent.parent / ".env"
 load_dotenv(dotenv_path=env_path)
@@ -22,13 +23,25 @@ load_dotenv(dotenv_path=env_path)
 app = FastAPI(title="K9")
 
 # 테스트용 ip 
-ALLOWED_IPS = os.getenv("ALLOWED_IPS", "0.0.0.0").split(",")
+ALLOWED_IPS = os.getenv("ALLOWED_IPS", "0.0.0.0,127.0.0.1,::1").split(",")
 
 @app.middleware("http")
 async def ip_filter_middleware(request: Request, call_next):
+    # 프론트엔드(5173, 5174 등)에서 POST 전송 전, 서버가 허용하는지 찌르는 'OPTIONS' 요청 처리
+    # 브라우저의 사전 요청(Preflight) 프리패스를 허용하여 CORS 정책을 우회할 수 있도록 처리 
+    if request.method == "OPTIONS":
+        return await call_next(request)
+    
     client_ip = request.client.host
+
+    # 0.0.0.0 이 포함되어 있다면 모든 IP 허용이므로 검사 패스
+    if "0.0.0.0" in ALLOWED_IPS:
+        return await call_next(request)
+
     if client_ip not in ALLOWED_IPS:
+        print(f"[IP Filter] 차단된 IP 접근 시도: {client_ip}")
         return JSONResponse(status_code=403, content={"detail": "접근이 거부되었습니다."})
+    
     response = await call_next(request)
     return response
 
@@ -37,7 +50,7 @@ async def ip_filter_middleware(request: Request, call_next):
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=["http://localhost:5173", "http://localhost:5174"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -50,6 +63,8 @@ app.include_router(assets_router)
 
 # 정책 확인 라우터 추가
 app.include_router(policy_router)
+# 포렌식 명령 라우터 추가
+app.include_router(forensic_router)
 
 # --- 인프라 설정 및 Health Check (기존 코드 유지) ---
 

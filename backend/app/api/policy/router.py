@@ -16,13 +16,13 @@ def check_policy_update(payload: schemas.PolicyCheckUpdateRequest):
     
     # 해시값이 같다면 업데이트 불필요
     if payload.agent_hash == server_hash:
-        return {"update_required": False, "message": "가장 최신 정책을 유지 중. 업데이트 필요 없음."}
-    
+        # return {"update_required": False, "message": "가장 최신 정책을 유지 중. 업데이트 필요 없음."}
+        return {"update_required": False, "message": f"가장 최신 정책을 유지 중. 업데이트 필요 없음. (해시: {server_hash})"}
     # 해시값이 다르다면 새로운 정책 데이터 반환
     new_policy = service.get_policy_data()
     return {
         "update_required": True,
         "new_hash": server_hash,
         "new_policy": new_policy,
-        "message": "새로운 정책이 업데이트 되었습니다. 에이전트의 정책을 업데이트했습니다."
+        "message": f"새로운 정책이 업데이트 되었습니다. 에이전트의 정책을 업데이트했습니다. (해시: {server_hash})"
 }

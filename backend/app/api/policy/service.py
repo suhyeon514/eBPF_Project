@@ -8,6 +8,8 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parents[4]
 policy_file_env = os.getenv("POLICY_FILE_PATH", "your_policy_path/policy.yaml")
 
+print(f"정책 파일 경로: {BASE_DIR}/{policy_file_env}")
+
 # .env의 경로가 상대 경로면 프로젝트 최상위 기준 절대 경로로 변환
 if not Path(policy_file_env).is_absolute():
     POLICY_FILE_PATH = str(BASE_DIR / policy_file_env)

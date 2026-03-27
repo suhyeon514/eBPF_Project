@@ -69,6 +69,11 @@ class EDRLog(BaseModel):
 class PolicyCheckUpdateRequest(BaseModel):
     agent_hash: str = Field(..., description="에이전트가 현재 가지고 있는 정책 파일의 SHA-256 해시값")
 
+# -- 포렌식 명령 관련 스키마 --
+class ForensicDumpRequest(BaseModel):
+    agent_id: str # 필수 입력 값, 어느 에이전트에 포렌식 덤프를 명령할지
+    reason: str = "Manual Trigger via Web" 
+
 # --- [4] 기존 로그인 관련 스키마 (유지) ---
 
 class LoginRequest(BaseModel):
