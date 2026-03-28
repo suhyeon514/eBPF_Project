@@ -21,7 +21,7 @@ func StartWebSocketListener(wsURL string, agentID string, dumpDir string) {
 	wsURL = strings.Replace(wsURL, "http://", "ws://", 1)
 	wsURL = strings.Replace(wsURL, "https://", "wss://", 1)
 
-	url := wsURL + "/api/v1/forensic/websocket/" + agentID
+	url := wsURL + "/api/v1/forensic/ws/" + agentID
 
 	for { // 재연결을 위한 바깥쪽 무한 루프
 		log.Printf("🔌 [WebSocket] 분석 서버(%s) 연결 시도 중. 에이전트 ID: %s\n", url, agentID)

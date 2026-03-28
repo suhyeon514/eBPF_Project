@@ -12,15 +12,15 @@ import (
 )
 
 // Client는 분석 서버와의 HTTP 통신을 전담하는 구조체입니다.
-type Client struct {
+type PolicyClient struct {
 	baseURL    string       // 예: "http://localhost:8000"
 	httpClient *http.Client // 타임아웃 처리를 위한 커스텀 HTTP 클라이언트
 	authToken  string       // 인증(Enrollment) 후 발급받은 JWT 토큰 (추후 사용)
 }
 
 // NewClient는 서버 주소와 타임아웃 시간을 받아 Client 구조체를 생성합니다.
-func NewClient(baseURL string, timeout time.Duration) *Client {
-	return &Client{
+func NewClient(baseURL string, timeout time.Duration) *PolicyClient {
+	return &PolicyClient{
 		baseURL: baseURL,
 		httpClient: &http.Client{
 			Timeout: timeout, // 네트워크 무한 대기(Hang) 방지
@@ -29,13 +29,13 @@ func NewClient(baseURL string, timeout time.Duration) *Client {
 }
 
 // SetAuthToken은 추후 auth.Service에서 인증이 완료된 후 토큰을 주입할 때 사용합니다.
-func (c *Client) SetAuthToken(token string) {
+func (c *PolicyClient) SetAuthToken(token string) {
 	c.authToken = token
 }
 
 // CheckPolicyUpdate는 분석 서버에 에이전트의 현재 정책 해시를 보내고, 업데이트 여부를 응답받습니다.
 // (policy.APIClient 인터페이스의 구현체입니다)
-func (c *Client) CheckPolicyUpdate(req dto.PolicyCheckRequest) (*dto.PolicyCheckResponse, error) {
+func (c *PolicyClient) CheckPolicyUpdate(req dto.PolicyCheckRequest) (*dto.PolicyCheckResponse, error) {
 	// 1. 요청 데이터를 JSON 바이트로 직렬화 (Marshal)
 	jsonData, err := json.Marshal(req)
 	if err != nil {

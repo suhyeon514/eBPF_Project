@@ -2,8 +2,11 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/suhyeon514/eBPF_Project/internal/collector"
@@ -33,54 +36,20 @@ import (
 	websocket "github.com/suhyeon514/eBPF_Project/internal/transport/websocket"
 )
 
-type RuntimeDeps struct {
-	// bootstrap / state 에서 넘어오는 런타임 의존성
-	ServerBaseURL    string
-	ServerCACertPath string
-
-	ClientCertPath string
-	ClientKeyPath  string
-
-	PolicyPath string
-
-	AgentID string
-	HostID  string
-	Env     string
-	Role    string
-
-	HeartbeatPath string
-	InstallUUID   string
-}
-
-func NewRuntimeDeps(
-	bootstrapCfg *config.BootstrapConfig,
-	bootstrapResult *BootstrapResult,
-) RuntimeDeps {
-	return RuntimeDeps{
-		ServerBaseURL:    bootstrapCfg.Server.BaseURL,
-		ServerCACertPath: bootstrapCfg.Server.CACertPath,
-		ClientCertPath:   bootstrapCfg.Paths.CertificatePath,
-		ClientKeyPath:    bootstrapCfg.Paths.PrivateKeyPath,
-		PolicyPath:       bootstrapCfg.Paths.PolicyPath,
-		AgentID:          bootstrapResult.AgentID,
-		HostID:           bootstrapCfg.Identity.HostID,
-		Env:              bootstrapCfg.Identity.Env,
-		Role:             bootstrapCfg.Identity.Role,
-		HeartbeatPath:    bootstrapCfg.Server.HeartbeatPath,
-		InstallUUID:      bootstrapResult.InstallUUID,
-	}
-}
-
 type RuntimeApp struct {
 	cfg  *config.RuntimeConfig
 	deps RuntimeDeps
 
 	policyService *policy.Service
+
+	// TODO:
+	// 추후 allowlist / focus_list 정책 엔진 추가
+	// policyEngine *policyengine.Engine
 }
 
 func NewRuntimeApp(cfg *config.RuntimeConfig, deps RuntimeDeps) *RuntimeApp {
 	apiClient := api.NewClient(deps.ServerBaseURL, 5*time.Second)
-	policySvc := policy.NewService(apiClient, deps.PolicyPath)
+	policySvc := policy.NewService(apiClient, deps.RuntimePolicyPath)
 	return &RuntimeApp{
 		cfg:  cfg,
 		deps: deps,
@@ -90,7 +59,6 @@ func NewRuntimeApp(cfg *config.RuntimeConfig, deps RuntimeDeps) *RuntimeApp {
 }
 
 func (a *RuntimeApp) Run(ctx context.Context) error {
-
 	// 1. Health Registry 생성
 	reg := health.NewRegistry()
 
@@ -99,6 +67,22 @@ func (a *RuntimeApp) Run(ctx context.Context) error {
 		return fmt.Errorf("create jsonl writer: %w", err)
 	}
 	defer writer.Close()
+
+	// 변경: host/env/role은 state.json에서 로드
+	hostID, hostname, assignedEnv, assignedRole, err := a.loadHostIdentityFromState()
+	if err != nil {
+		return fmt.Errorf("load host identity from state: %w", err)
+	}
+	a.deps.HostID = hostID
+	if strings.TrimSpace(hostname) != "" {
+		a.cfg.Host.Hostname = strings.TrimSpace(hostname)
+	}
+	if strings.TrimSpace(assignedEnv) != "" {
+		a.deps.AssignedEnv = strings.TrimSpace(assignedEnv)
+	}
+	if strings.TrimSpace(assignedRole) != "" {
+		a.deps.AssignedRole = strings.TrimSpace(assignedRole)
+	}
 
 	host := a.buildHostMeta()
 	router := a.buildRouter(host)
@@ -126,7 +110,7 @@ func (a *RuntimeApp) Run(ctx context.Context) error {
 	// =========================================================================
 	log.Printf("🚀 [WebSocket] AVML 포렌식 리스너 시작 (Target: %s) (덤프 경로: %s)", a.deps.ServerBaseURL, a.cfg.Forensic.DumpPath)
 	// agentID := a.deps.AgentID // 현재 에이전트 ID 하드코딩, 인증 로직 생성된 후에는 a.deps.AgentID로 변경 필요
-	agentID := "host-lab-001"
+	agentID := a.deps.AgentID
 	// go websocket.StartWebSocketListener(wsBaseURL, agentID, dumpPath)
 	go websocket.StartWebSocketListener(a.deps.ServerBaseURL, agentID, a.cfg.Forensic.DumpPath)
 
@@ -135,8 +119,8 @@ func (a *RuntimeApp) Run(ctx context.Context) error {
 	defer policyTicker.Stop()
 	log.Println("⏱️  [정책 업데이트 타이머 시작] ")
 
-	events := fanInEvents(collectors...)
-	errors := fanInErrors(collectors...)
+	events := fanInEventsWithExtra(collectors, healthChan)
+	errors := fanInErrors(collectors)
 
 	for {
 		select {
@@ -159,7 +143,7 @@ func (a *RuntimeApp) Run(ctx context.Context) error {
 
 		case <-policyTicker.C:
 			log.Println("[정책 업데이트 여부 확인] 주기적 정책 업데이트 확인 타이머 동작")
-			if err := a.runPolicyCheck(ctx); err != nil {
+			if err := a.runPolicyCheckAndMaybeReload(ctx); err != nil {
 				log.Printf("[runtime] policy check failed: %v", err)
 			}
 
@@ -176,8 +160,8 @@ func (a *RuntimeApp) buildHostMeta() model.HostMeta {
 	return model.HostMeta{
 		HostID:   a.deps.HostID,
 		Hostname: a.cfg.Host.Hostname,
-		Env:      a.deps.Env,
-		Role:     a.deps.Role,
+		Env:      a.deps.AssignedEnv,
+		Role:     a.deps.AssignedRole,
 	}
 }
 
@@ -289,6 +273,8 @@ func (a *RuntimeApp) handleRawEvent(
 	raw model.RawEnvelope,
 	reg *health.Registry,
 ) error {
+	reg.MarkNormalizeOK()
+
 	events, err := router.Normalize(ctx, raw)
 	if err != nil {
 		reg.IncDrop()
@@ -318,82 +304,101 @@ func writeEvents(writer *jsonl.Writer, events []model.Event) error {
 	return nil
 }
 
-func fanInEvents(cs ...collector.Collector) <-chan model.RawEnvelope {
+// fanInEventsWithExtra는 기존 collector events + 추가 채널(health 등)을 함께 합친다.
+func fanInEventsWithExtra(
+	collectors []collector.Collector,
+	extra ...<-chan model.RawEnvelope,
+) <-chan model.RawEnvelope {
 	out := make(chan model.RawEnvelope)
 
 	go func() {
 		defer close(out)
 
-		type eventItem struct {
-			ev model.RawEnvelope
-			ok bool
+		type source struct {
+			ch <-chan model.RawEnvelope
 		}
 
-		merged := make(chan eventItem)
-
-		for _, c := range cs {
-			events := c.Events()
-
-			go func(ch <-chan model.RawEnvelope) {
-				for ev := range ch {
-					merged <- eventItem{ev: ev, ok: true}
-				}
-				merged <- eventItem{ok: false}
-			}(events)
+		var sources []source
+		for _, c := range collectors {
+			sources = append(sources, source{ch: c.Events()})
+		}
+		for _, ch := range extra {
+			sources = append(sources, source{ch: ch})
 		}
 
-		closedCount := 0
-		for {
-			item := <-merged
-			if !item.ok {
-				closedCount++
-				if closedCount == len(cs) {
-					return
+		open := len(sources)
+		if open == 0 {
+			return
+		}
+
+		closed := make([]bool, len(sources))
+
+		for open > 0 {
+			for i, src := range sources {
+				if closed[i] {
+					continue
 				}
-				continue
+
+				select {
+				case ev, ok := <-src.ch:
+					if !ok {
+						closed[i] = true
+						open--
+						continue
+					}
+					out <- ev
+				default:
+				}
 			}
-			out <- item.ev
+
+			time.Sleep(10 * time.Millisecond)
 		}
 	}()
 
 	return out
 }
 
-func fanInErrors(cs ...collector.Collector) <-chan error {
+func fanInErrors(collectors []collector.Collector) <-chan error {
 	out := make(chan error)
 
 	go func() {
 		defer close(out)
 
-		type errorItem struct {
-			err error
-			ok  bool
+		type source struct {
+			ch <-chan error
 		}
 
-		merged := make(chan errorItem)
-
-		for _, c := range cs {
-			errs := c.Errors()
-
-			go func(ch <-chan error) {
-				for err := range ch {
-					merged <- errorItem{err: err, ok: true}
-				}
-				merged <- errorItem{ok: false}
-			}(errs)
+		var sources []source
+		for _, c := range collectors {
+			sources = append(sources, source{ch: c.Errors()})
 		}
 
-		closedCount := 0
-		for {
-			item := <-merged
-			if !item.ok {
-				closedCount++
-				if closedCount == len(cs) {
-					return
+		open := len(sources)
+		if open == 0 {
+			return
+		}
+
+		closed := make([]bool, len(sources))
+
+		for open > 0 {
+			for i, src := range sources {
+				if closed[i] {
+					continue
 				}
-				continue
+
+				select {
+				case err, ok := <-src.ch:
+					if !ok {
+						closed[i] = true
+						open--
+						continue
+					}
+					out <- err
+				default:
+				}
 			}
-			out <- item.err
+
+			time.Sleep(10 * time.Millisecond)
 		}
 	}()
 
@@ -401,7 +406,7 @@ func fanInErrors(cs ...collector.Collector) <-chan error {
 }
 
 // 🔥 [추가] 정책 검사 실행 및 eBPF 리로드 처리 헬퍼 함수
-func (a *RuntimeApp) runPolicyCheck(ctx context.Context) error {
+func (a *RuntimeApp) runPolicyCheckAndMaybeReload(ctx context.Context) error {
 	// 만들어두신 CheckAndSync 로직 호출
 	updated, err := a.policyService.CheckAndSync()
 	if err != nil {
@@ -409,15 +414,65 @@ func (a *RuntimeApp) runPolicyCheck(ctx context.Context) error {
 		return err
 	}
 
-	// 서버에서 새 정책을 받아 로컬 파일 덮어쓰기가 완료되었다면 (updated == true)
-	if updated {
-		log.Println("🔄 새로운 정책이 감지되어 로컬에 파일 덮어쓰기 완료.")
-
-		// TODO: Tetragon 등 eBPF 수집기 쪽에 "설정 다시 읽어와라"라고 명령하는 함수를 호출합니다.
-		// 예: a.tetragonCollector.Reload()
-	} else {
-		log.Println("✅ 정책 변경 사항 없음.")
+	if !updated {
+		return nil
 	}
 
+	log.Println("[runtime] policy updated on disk. reloading runtime config...")
+
+	newCfg, err := config.LoadRuntime(a.deps.RuntimePolicyPath)
+	if err != nil {
+		return fmt.Errorf("reload runtime config: %w", err)
+	}
+	// TODO:
+	// 1. allowlist / focus_list 정책 엔진 교체
+	// 2. collector diff 계산 후 필요한 collector만 재구성/재시작
+	//
+	// 현재 1차 단계에서는 in-memory config만 교체
+	a.cfg = newCfg
+
+	log.Println("[runtime] runtime config reloaded successfully")
 	return nil
+}
+
+// loadHostIdentityFromState는 state.json에서 host/env/role을 로드합니다.
+func (a *RuntimeApp) loadHostIdentityFromState() (hostID, hostname, assignedEnv, assignedRole string, err error) {
+	statePath := strings.TrimSpace(os.Getenv("EBPF_AGENT_STATE_PATH"))
+	if statePath == "" {
+		statePath = "/var/lib/ebpf-edr/state.json"
+	}
+
+	b, err := os.ReadFile(statePath)
+	if err != nil {
+		return "", "", "", "", fmt.Errorf("read state file (%s): %w", statePath, err)
+	}
+
+	var st runtimeStateSnapshot
+	if err := json.Unmarshal(b, &st); err != nil {
+		return "", "", "", "", fmt.Errorf("decode state file (%s): %w", statePath, err)
+	}
+
+	hostID = strings.TrimSpace(st.HostID)
+	hostname = strings.TrimSpace(st.Hostname)
+	assignedEnv = strings.TrimSpace(st.AssignedEnv)
+	assignedRole = strings.TrimSpace(st.AssignedRole)
+
+	if hostID == "" {
+		return "", "", "", "", fmt.Errorf("state.host_id is empty")
+	}
+	if hostname == "" {
+		if hn, e := os.Hostname(); e == nil {
+			hostname = strings.TrimSpace(hn)
+		}
+	}
+
+	return hostID, hostname, assignedEnv, assignedRole, nil
+}
+
+type runtimeStateSnapshot struct {
+	HostID       string `json:"host_id"`
+	Hostname     string `json:"hostname"`
+	AssignedEnv  string `json:"assigned_env"`
+	AssignedRole string `json:"assigned_role"`
+	AgentID      string `json:"agent_id"`
 }
