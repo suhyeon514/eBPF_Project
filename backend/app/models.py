@@ -69,6 +69,49 @@ class Assets(Base):
     def __repr__(self):
         return f"<Agent(hostname={self.hostname}, ip={self.ip_address}, status={self.status})>"
 
+class EnrollmentRequest(Base):
+    __tablename__ = "enrollment_requests"
+
+    id               = Column(Integer, primary_key=True, index=True)
+    request_id       = Column(String(32), unique=True, index=True, nullable=False)
+
+    # 에이전트 식별
+    host_id          = Column(String, nullable=False, index=True)
+    install_uuid     = Column(String, nullable=False, unique=True, index=True)
+
+    # Fingerprint (flat)
+    machine_id       = Column(String, nullable=False)
+    hostname         = Column(String, nullable=False)
+    ip_address       = Column(String, nullable=True)   # 등록 요청 시 클라이언트 IP
+    os_id            = Column(String, nullable=False)
+    os_version       = Column(String, nullable=False)
+    cloud_instance_id = Column(String, nullable=True)
+
+    # CSR 및 발급 인증서
+    csr_pem          = Column(Text, nullable=False)
+    certificate_pem  = Column(Text, nullable=True)   # 승인 시 채워짐
+
+    # 상태: pending | approved | rejected
+    status           = Column(String(16), default="pending", nullable=False, index=True)
+    reason_code      = Column(String(64), nullable=True)
+
+    # 할당 정보 (승인 시 설정)
+    agent_id         = Column(String, nullable=True)
+    assigned_env     = Column(String, nullable=True)
+    assigned_role    = Column(String, nullable=True)
+
+    # 에이전트 요청 정보
+    requested_env    = Column(String, nullable=True)
+    requested_role   = Column(String, nullable=True)
+
+    # 일회용 승인/거부 토큰 (Slack 링크용, 사용 후 NULL)
+    approve_token    = Column(String(36), unique=True, nullable=True, index=True)
+    reject_token     = Column(String(36), unique=True, nullable=True, index=True)
+
+    created_at       = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at       = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
 class DetectionRule(Base):
     __tablename__ = "detection_rules"
 

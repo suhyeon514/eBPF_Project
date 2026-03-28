@@ -1,13 +1,14 @@
 import os
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 from dotenv import load_dotenv
 from fastapi import FastAPI, Depends, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
-from neo4j import GraphDatabase
 from sqlalchemy import text
+from neo4j import GraphDatabase
+from datetime import timedelta
 from .core.config import os_client
 from .database import engine, get_db, SessionLocal
 from . import models
@@ -17,9 +18,13 @@ from .api.dashboard.router import router as dashboard_router
 from .api.assets.router import router as assets_router
 from .api.dashboard.service import DashboardService
 from apscheduler.schedulers.background import BackgroundScheduler
-#from .api.policy.router import router as policy_router  # 정책 라우터 임포트
 from .api.policy.router import router as policy_router  # 정책 라우터 임포트
 from .api.forensic.router import router as forensic_router  # 포렌식 라우터 임포트
+from .api.enroll.router import router as enroll_router      # 등록 라우터 임포트
+from .api.runtime.router import router as runtime_router    # 런타임 정책 라우터 임포트
+from .api.agent.router import router as agent_router        # 에이전트 heartbeat 라우터
+from .api.artifacts.router import router as artifacts_router  # 아티팩트 배포 라우터
+from .core.ca import init_ca
 
 env_path = Path(__file__).resolve().parent.parent.parent / ".env"
 load_dotenv(dotenv_path=env_path)
@@ -35,7 +40,12 @@ async def ip_filter_middleware(request: Request, call_next):
     # 브라우저의 사전 요청(Preflight) 프리패스를 허용하여 CORS 정책을 우회할 수 있도록 처리 
     if request.method == "OPTIONS":
         return await call_next(request)
-    
+
+    # 토큰 기반 승인/거부, 에이전트 heartbeat, 아티팩트 다운로드는 IP 제한 없이 허용
+    if request.url.path in ("/api/v1/enroll/approve", "/api/v1/enroll/reject", "/api/v1/agent/heartbeat") \
+            or request.url.path.startswith("/api/v1/artifacts/"):
+        return await call_next(request)
+
     client_ip = request.client.host
 
     # 0.0.0.0 이 포함되어 있다면 모든 IP 허용이므로 검사 패스
@@ -69,6 +79,14 @@ app.include_router(assets_router)
 app.include_router(policy_router)
 # 포렌식 명령 라우터 추가
 app.include_router(forensic_router)
+# 에이전트 등록 라우터 추가
+app.include_router(enroll_router)
+# 런타임 정책 라우터 추가
+app.include_router(runtime_router)
+# 에이전트 heartbeat 라우터 추가
+app.include_router(agent_router)
+# 아티팩트 배포 라우터 추가
+app.include_router(artifacts_router)
 
 # --- 인프라 설정 및 Health Check (기존 코드 유지) ---
 
@@ -85,10 +103,33 @@ def update_dashboard_task():
     finally:
         db.close()
 
+
+def mark_offline_agents_task():
+    """마지막 heartbeat로부터 5분 이상 지난 에이전트를 오프라인으로 표시."""
+    db = SessionLocal()
+    try:
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=5)
+        stale = db.query(models.Assets).filter(
+            models.Assets.status != "오프라인",
+            models.Assets.last_heartbeat < cutoff,
+        ).all()
+        for agent in stale:
+            agent.status = "오프라인"
+            print(f"📴 [Offline] {agent.hostname} → 오프라인 처리")
+        if stale:
+            db.commit()
+    finally:
+        db.close()
+
+
 scheduler = BackgroundScheduler()
-# 1분마다 실행하려면 minutes=1, 10분마다 실행하려면 minutes=10으로 수정하세요!
-scheduler.add_job(update_dashboard_task, 'interval', minutes=1) 
+scheduler.add_job(update_dashboard_task, 'interval', minutes=1)
+scheduler.add_job(mark_offline_agents_task, 'interval', minutes=1)
 scheduler.start()
+
+@app.on_event("startup")
+def startup_event():
+    init_ca()
 
 @app.on_event("shutdown")
 def shutdown_event():

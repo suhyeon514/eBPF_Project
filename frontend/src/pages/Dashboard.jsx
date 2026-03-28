@@ -1,30 +1,29 @@
 import { useState, useEffect } from 'react';
-import axios from 'axios';
-
-axios.defaults.withCredentials = true;
+import { useNavigate } from 'react-router-dom';
+import apiClient from '../api/client';
 
 function Dashboard() {
+  const navigate = useNavigate();
   const [alerts, setAlerts] = useState([]);
-  const [stats, setStats] = useState({ 
-    critical_alerts: 0, 
-    unassigned_alerts: 0, 
-    active_agents: 0, 
-    status_score: 0 
+  const [stats, setStats] = useState({
+    critical_alerts: 0,
+    unassigned_alerts: 0,
+    active_agents: 0,
+    total_agents: 0,
+    online_ratio: 0,
+    status_score: 0,
   });
 
-  // [중요] 본인의 실제 Grafana UID로 수정하세요
-  const GRAFANA_URL = "http://localhost:3000/d/[Grafana UID]/ebpf-overview?kiosk&orgId=1&from=now-24h&to=now";
-  const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+  const GRAFANA_URL = import.meta.env.VITE_GRAFANA_URL || 'http://localhost:3000';
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        // 1. 고위험 알람 Top 5 가져오기
-        const alertsRes = await axios.get(`${API_BASE_URL}/api/v1/dashboard/top-alerts`);
+        const [alertsRes, statsRes] = await Promise.all([
+          apiClient.get('/api/v1/dashboard/top-alerts'),
+          apiClient.get('/api/v1/dashboard/stats'),
+        ]);
         setAlerts(alertsRes.data);
-
-        // 2. 상단 요약 지표 가져오기
-        const statsRes = await axios.get(`${API_BASE_URL}/api/v1/dashboard/stats`);
         setStats(statsRes.data);
       } catch (err) {
         console.error("데이터 로드 실패:", err);
@@ -32,18 +31,42 @@ function Dashboard() {
     };
 
     fetchData();
-    const timer = setInterval(fetchData, 10000); // 5초마다 갱신
+    const timer = setInterval(fetchData, 10000);
     return () => clearInterval(timer);
   }, []);
 
   return (
     <div>
-      {/* 1. 상단 요약 지표 (목업 반영) */}
+      {/* 1. 상단 요약 지표 */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '30px' }}>
-        <SummaryCard title="심각 알람" value={stats.critical_alerts} subText="▲ 전일 대비 20% 증가" color="#ff4757" icon="⚠️" />
-        <StatusCard title="미배정 알람" value={stats.unassigned_alerts} subText="즉시 대응 필요" color="#6c5ce7" icon="👤" />
-        <SummaryCard title="활성 에이전트" value={stats.active_agents.toLocaleString()} subText="98.5% 온라인" color="#2ed573" icon="🛡️" />
-        <SummaryCard title="상태 점수" value={`${stats.status_score}%`} subText="정상 가동 중" color="#1e90ff" icon="📈" />
+        <SummaryCard
+          title="심각 알람"
+          value={stats.critical_alerts}
+          subText={stats.critical_alerts > 0 ? "즉시 조치 필요" : "위협 탐지 없음"}
+          color={stats.critical_alerts > 0 ? "#ff4757" : "#2ed573"}
+          icon="⚠️"
+        />
+        <SummaryCard
+          title="미배정 알람"
+          value={stats.unassigned_alerts}
+          subText={stats.unassigned_alerts > 0 ? "즉시 대응 필요" : "전원 처리 완료"}
+          color={stats.unassigned_alerts > 0 ? "#6c5ce7" : "#2ed573"}
+          icon="👤"
+        />
+        <SummaryCard
+          title="활성 에이전트"
+          value={`${stats.active_agents} / ${stats.total_agents}`}
+          subText={`${stats.online_ratio}% 온라인`}
+          color={stats.online_ratio >= 80 ? "#2ed573" : stats.online_ratio >= 50 ? "#ffa502" : "#ff4757"}
+          icon="🛡️"
+        />
+        <SummaryCard
+          title="상태 점수"
+          value={`${stats.status_score}점`}
+          subText={stats.status_score >= 80 ? "정상 가동 중" : stats.status_score >= 60 ? "주의 필요" : "긴급 점검 필요"}
+          color={stats.status_score >= 80 ? "#1e90ff" : stats.status_score >= 60 ? "#ffa502" : "#ff4757"}
+          icon="📈"
+        />
       </div>
 
       {/* 2. 메인 차트 영역 (Grafana) - 창을 더 키웠습니다 */}
@@ -57,7 +80,7 @@ function Dashboard() {
         <iframe
           src={GRAFANA_URL}
           width="100%"
-          height="500px" // 높이를 더 키웠습니다
+          height="500px"
           frameBorder="0"
           style={{ border: 'none', display: 'block' }}
           title="Grafana Dashboard"
@@ -89,10 +112,13 @@ function Dashboard() {
                 <td style={{ color: '#666', fontSize: '14px' }}>{alert.host_info}</td>
                 <td style={{ color: '#888', fontSize: '14px' }}>{new Date(alert.event_time).toLocaleString()}</td>
                 <td style={{ textAlign: 'center' }}>
-                  <button style={{ 
-                    padding: '8px 16px', borderRadius: '8px', border: 'none', 
-                    backgroundColor: '#6c5ce7', color: 'white', cursor: 'pointer', fontWeight: 'bold' 
-                  }}>
+                  <button
+                    onClick={() => navigate('/events')}
+                    style={{
+                      padding: '8px 16px', borderRadius: '8px', border: 'none',
+                      backgroundColor: '#6c5ce7', color: 'white', cursor: 'pointer', fontWeight: 'bold'
+                    }}
+                  >
                     분석하기
                   </button>
                 </td>

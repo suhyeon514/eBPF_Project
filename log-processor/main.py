@@ -128,6 +128,41 @@ class DetectionEngine:
         finally:
             session.close()
 
+    def upsert_asset(self, hostname: str, resource: dict):
+        cpu = resource.get("cpu_usage", 0.0)
+        mem = resource.get("mem_usage", 0.0)
+        if cpu > 90 or mem > 90:
+            status = "위험"
+        elif cpu > 70 or mem > 70:
+            status = "주의"
+        else:
+            status = "정상"
+
+        now = datetime.now(timezone.utc)
+        session = self.Session()
+        try:
+            exists = session.execute(
+                text('SELECT id FROM "Assets" WHERE hostname = :h'),
+                {"h": hostname}
+            ).first()
+            if exists:
+                session.execute(
+                    text('UPDATE "Assets" SET cpu_usage=:cpu, memory_usage=:mem, status=:s, last_heartbeat=:now WHERE hostname=:h'),
+                    {"cpu": cpu, "mem": mem, "s": status, "now": now, "h": hostname}
+                )
+            else:
+                session.execute(
+                    text('INSERT INTO "Assets" (hostname, ip_address, cpu_usage, memory_usage, status, last_heartbeat) VALUES (:h, :ip, :cpu, :mem, :s, :now)'),
+                    {"h": hostname, "ip": "N/A", "cpu": cpu, "mem": mem, "s": status, "now": now}
+                )
+            session.commit()
+            print(f"💓 [Asset] {hostname} → {status} (CPU:{cpu:.1f}% MEM:{mem:.1f}%)")
+        except Exception as e:
+            session.rollback()
+            print(f"❌ [Asset] upsert 실패: {e}")
+        finally:
+            session.close()
+
     def match(self, n_log):
         matched_results = []
         for rule in self.rules:
@@ -200,6 +235,13 @@ def main():
         raw_log["kafka_topic"] = topic
 
         engine.refresh_rules()
+
+        if raw_log.get("event_type") == "edr.system.resource":
+            hostname = raw_log.get("host", {}).get("hostname")
+            resource = raw_log.get("resource", {})
+            if hostname and resource:
+                engine.upsert_asset(hostname, resource)
+
         f_log = flatten_log(raw_log)
         n_log = normalize_log(f_log)
         matches = engine.match(n_log)

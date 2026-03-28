@@ -1,6 +1,9 @@
 # backend/app/api/forensic/router.py
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
+from sqlalchemy.orm import Session
 from ... import schemas
+from ...database import get_db
+from ...models import EnrollmentRequest
 from .websocket_manager import manager
 
 
@@ -22,10 +25,16 @@ async def websocket_endpoint(websocket: WebSocket, agent_id: str):
 
 # [수정] 프론트엔드 전용 수동 덤프 트리거 API
 @router.post("/avml-dump")
-async def trigger_avml_dump(payload: schemas.ForensicDumpRequest):
-    # 큐에 저장하는 폴링 방식 대신, 웹소켓으로 즉시(Push) 전송합니다!
+async def trigger_avml_dump(payload: schemas.ForensicDumpRequest, db: Session = Depends(get_db)):
+    # hostname으로 요청 온 경우 enrollment DB에서 실제 agent_id(UUID) 조회
+    record = db.query(EnrollmentRequest).filter(
+        EnrollmentRequest.hostname == payload.agent_id,
+        EnrollmentRequest.status == "approved"
+    ).order_by(EnrollmentRequest.created_at.desc()).first()
+    agent_id = record.agent_id if record else payload.agent_id
+
     command = {"action": "avml_dump", "reason": payload.reason}
-    is_sent = await manager.send_command(payload.agent_id, command)
+    is_sent = await manager.send_command(agent_id, command)
     
     if is_sent:
         return {"status": "success", "message": f"[{payload.agent_id}] 에이전트에 즉시 명령을 하달했습니다."}
