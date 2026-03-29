@@ -10,7 +10,6 @@ import Forensics from './pages/Forensics';
 import Policy from './pages/Policy';
 import Analysis from './pages/Analysis';
 import apiClient from './api/client';
-import Analysis from './pages/Analysis';
 
 function App() {
   const [user, setUser] = useState(null);
@@ -29,16 +28,16 @@ function App() {
     setUser(null);
   };
 
-  // useEffect(() => {
-  //   const savedUser = localStorage.getItem('ebpf_user');
-  //   if (savedUser) {
-  //     setUser(JSON.parse(savedUser));
-  //   }
-  //   setLoading(false); // 체크가 끝나면 로딩 완료
-  // }, []);
+  useEffect(() => {
+    const savedUser = localStorage.getItem('ebpf_user');
+    if (savedUser) {
+      setUser(JSON.parse(savedUser));
+    }
+    setLoading(false); // 체크가 끝나면 로딩 완료
+  }, []);
 
-  // // 유저 체크가 끝나기 전에는 아무것도 렌더링하지 않거나 로딩 스피너를 보여줌
-  // if (loading) return null;
+  // 유저 체크가 끝나기 전에는 아무것도 렌더링하지 않거나 로딩 스피너를 보여줌
+  if (loading) return null;
 
   return (
     <BrowserRouter>
@@ -54,6 +53,7 @@ function App() {
           <Route path="/events" element={<Events />} />
           <Route path="/forensics" element={<Forensics />} />
           <Route path="/policy" element={<Policy />} />
+
         </Route>
       </Routes>
     </BrowserRouter>

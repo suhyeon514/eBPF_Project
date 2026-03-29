@@ -24,7 +24,6 @@ from .api.dashboard.service import DashboardService
 from apscheduler.schedulers.background import BackgroundScheduler
 from .api.policy.router import router as policy_router  # 정책 라우터 임포트
 from .api.forensic.router import router as forensic_router  # 포렌식 라우터 임포트
-from .api.analysis.router import router as analysis_router
 from .api.process_analysis.router import router as process_analysis_router
 from .api.enroll.router import router as enroll_router      # 등록 라우터 임포트
 from .api.runtime.router import router as runtime_router    # 런타임 정책 라우터 임포트
@@ -83,7 +82,7 @@ app.include_router(dashboard_router)
 app.include_router(assets_router)
 app.include_router(policy_router)
 app.include_router(forensic_router)
-app.include_router(analysis_router)
+#app.include_router(analysis_router)
 
 # 프로세스 분석 라우터 추가
 app.include_router(process_analysis_router)
@@ -135,7 +134,7 @@ scheduler = BackgroundScheduler()
 scheduler.add_job(update_dashboard_task, 'interval', minutes=1)
 scheduler.add_job(mark_offline_agents_task, 'interval', minutes=1)
 # 1분마다 실행하려면 minutes=1, 10분마다 실행하려면 minutes=10으로 수정하세요!
-scheduler.add_job(update_dashboard_task, 'interval', minutes=3) 
+# scheduler.add_job(update_dashboard_task, 'interval', minutes=3) 
 scheduler.start()
 
 @app.on_event("startup")
