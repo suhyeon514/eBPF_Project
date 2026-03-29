@@ -109,10 +109,9 @@ func (a *RuntimeApp) Run(ctx context.Context) error {
 	// [추가] WebSocket 및 AVML(Forensic) 리스너 백그라운드 실행
 	// =========================================================================
 	log.Printf("🚀 [WebSocket] AVML 포렌식 리스너 시작 (Target: %s) (덤프 경로: %s)", a.deps.ServerBaseURL, a.cfg.Forensic.DumpPath)
-	// agentID := a.deps.AgentID // 현재 에이전트 ID 하드코딩, 인증 로직 생성된 후에는 a.deps.AgentID로 변경 필요
-	agentID := a.deps.AgentID
+
 	// go websocket.StartWebSocketListener(wsBaseURL, agentID, dumpPath)
-	go websocket.StartWebSocketListener(a.deps.ServerBaseURL, agentID, a.cfg.Forensic.DumpPath)
+	go websocket.StartWebSocketListener(a.deps.S3DumpInfo, a.deps.ServerBaseURL, a.deps.AgentID, a.cfg.Forensic.DumpPath)
 
 	// 메인 루프 진입 전, 주기적 정책 확인을 위한 타이머 생성 (예: 30초)
 	policyTicker := time.NewTicker(30 * time.Second)

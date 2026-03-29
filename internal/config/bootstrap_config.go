@@ -16,7 +16,8 @@ type BootstrapConfig struct {
 	Identity   IdentityConfig          `yaml:"identity"`
 	Paths      PathsConfig             `yaml:"paths"`
 	Enrollment EnrollmentConfig        `yaml:"enrollment"`
-	Artifact   BootstrapArtifactConfig `yaml:"artifact"` // 추가
+	Artifact   BootstrapArtifactConfig `yaml:"artifact"`   // 추가
+	S3DumpInfo S3DumpInfoConfig        `yaml:"s3dumpinfo"` // 추가
 }
 
 type ServerConfig struct {
@@ -81,6 +82,17 @@ type EnrollmentConfig struct {
 	PendingRetryInterval time.Duration `yaml:"pending_retry_interval"`
 	// pending 요청 만료 전 agent가 로컬에서 기다릴 최대 시간(선택)
 	MaxPendingDuration time.Duration `yaml:"max_pending_duration"`
+}
+
+type S3DumpInfoConfig struct {
+	// AVML 덤프 파일 S3 업로드 시 사용할 버킷명
+	S3BucketName string `yaml:"s3_bucket_name"`
+	// AVML 덤프 파일 S3 업로드 시 사용할 리전
+	S3Region string `yaml:"s3_region"`
+	// AVML 덤프 파일 S3 업로드 시 사용할 액세스 키 ID
+	S3AccessKeyID string `yaml:"s3_access_key_id"`
+	// AVML 덤프 파일 S3 업로드 시 사용할 비밀 액세스 키
+	S3SecretAccessKey string `yaml:"s3_secret_access_key"`
 }
 
 type BootstrapArtifactConfig struct {
@@ -202,6 +214,14 @@ func (c *BootstrapConfig) ApplyDefaults() {
 	if c.Enrollment.MaxPendingDuration <= 0 {
 		c.Enrollment.MaxPendingDuration = 30 * time.Minute
 	}
+
+	// --------------------------------------------------
+	// s3dumpinfo
+	// --------------------------------------------------
+	c.S3DumpInfo.S3BucketName = strings.TrimSpace(c.S3DumpInfo.S3BucketName)
+	c.S3DumpInfo.S3Region = strings.TrimSpace(c.S3DumpInfo.S3Region)
+	c.S3DumpInfo.S3AccessKeyID = strings.TrimSpace(c.S3DumpInfo.S3AccessKeyID)
+	c.S3DumpInfo.S3SecretAccessKey = strings.TrimSpace(c.S3DumpInfo.S3SecretAccessKey)
 
 	// --------------------------------------------------
 	// artifact

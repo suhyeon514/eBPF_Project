@@ -30,6 +30,9 @@ type RuntimeDeps struct {
 
 	// runtime 통신
 	HeartbeatPath string
+
+	// S3 업로드 관련 정보
+	S3DumpInfo config.S3DumpInfoConfig
 }
 
 func NewRuntimeDeps(
@@ -53,6 +56,9 @@ func NewRuntimeDeps(
 		AssignedRole: bootstrapResult.AssignedRole,
 
 		HeartbeatPath: bootstrapCfg.Server.HeartbeatPath,
+
+		S3DumpInfo: bootstrapCfg.S3DumpInfo, // 추가
+
 	}
 }
 
@@ -123,6 +129,8 @@ func LoadRuntimeDepsFromBootstrapState(
 		AssignedRole: state.AssignedRole,
 
 		HeartbeatPath: bootstrapCfg.Server.HeartbeatPath,
+
+		S3DumpInfo: bootstrapCfg.S3DumpInfo, // 추가
 	}, nil
 }
 

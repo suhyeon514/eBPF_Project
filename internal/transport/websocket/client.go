@@ -8,7 +8,12 @@ import (
 
 	"github.com/gorilla/websocket"
 	forensics "github.com/suhyeon514/eBPF_Project/internal/action"
+	"github.com/suhyeon514/eBPF_Project/internal/config"
 )
+
+type DumpInfo struct {
+	cfg *config.BootstrapConfig
+}
 
 type CommandMessage struct {
 	Action string `json:"action"`
@@ -16,7 +21,7 @@ type CommandMessage struct {
 }
 
 // StartWebSocketListener는 서버와 연결을 맺고 무한히 명령을 기다립니다.
-func StartWebSocketListener(wsURL string, agentID string, dumpDir string) {
+func StartWebSocketListener(s3Info config.S3DumpInfoConfig, wsURL string, agentID string, dumpDir string) {
 	// 🔥 [추가] 일반 HTTP/HTTPS 주소가 들어오면 자동으로 WebSocket 스킴으로 변환합니다.
 	wsURL = strings.Replace(wsURL, "http://", "ws://", 1)
 	wsURL = strings.Replace(wsURL, "https://", "wss://", 1)
@@ -32,8 +37,6 @@ func StartWebSocketListener(wsURL string, agentID string, dumpDir string) {
 			time.Sleep(5 * time.Second)
 			continue
 		}
-
-		log.Println("✅ [WebSocket] 실시간 명령 수신 대기 통로 확보!")
 
 		// 메시지 수신용 안쪽 무한 루프 (수화기 들고 대기)
 		for {
@@ -61,7 +64,7 @@ func StartWebSocketListener(wsURL string, agentID string, dumpDir string) {
 				log.Printf("🚨 [웹소켓 수신] AVML 덤프 즉시 실행! (사유: %s)\n", cmd.Reason)
 
 				// eBPF 엔진이 멈추지 않도록 무조건 goroutine으로 실행
-				go forensics.RunAVMLDump(cmd.Reason, dumpDir)
+				go forensics.RunAVMLDump(s3Info, cmd.Reason, dumpDir, agentID)
 			} else {
 				// 🔥 [디버그 3] Action 이름이 다를 때 로그 출력
 				log.Printf("⚠️ [디버그] 처리할 수 없는 Action 명령입니다: '%s'\n", cmd.Action)
