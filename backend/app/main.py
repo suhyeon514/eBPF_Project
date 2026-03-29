@@ -11,15 +11,15 @@ from sqlalchemy import text
 from .core.config import os_client
 from .database import engine, get_db, SessionLocal
 from . import models
-# 분리한 라우터 임포트
+
 from .api.auth.router import router as auth_router
 from .api.dashboard.router import router as dashboard_router
 from .api.assets.router import router as assets_router
 from .api.dashboard.service import DashboardService
 from apscheduler.schedulers.background import BackgroundScheduler
-#from .api.policy.router import router as policy_router  # 정책 라우터 임포트
 from .api.policy.router import router as policy_router  # 정책 라우터 임포트
 from .api.forensic.router import router as forensic_router  # 포렌식 라우터 임포트
+from .api.process_analysis.router import router as process_analysis_router
 
 env_path = Path(__file__).resolve().parent.parent.parent / ".env"
 load_dotenv(dotenv_path=env_path)
@@ -60,18 +60,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# [라우터 등록] 분리한 인증 기능을 앱에 포함시킵니다.
+# [라우터 등록] 분리한 인증 기능을 앱에 포함
 app.include_router(auth_router)
 app.include_router(dashboard_router)
 app.include_router(assets_router)
-
-# 정책 확인 라우터 추가
 app.include_router(policy_router)
-# 포렌식 명령 라우터 추가
 app.include_router(forensic_router)
+app.include_router(process_analysis_router)
 
-# --- 인프라 설정 및 Health Check (기존 코드 유지) ---
 
+# --- 인프라 설정 및 Health Check ---
 NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
 NEO4J_URI = "bolt://localhost:7687"
 NEO4J_USER = "neo4j"

@@ -4,6 +4,7 @@ import Dashboard from './pages/Dashboard'; // 기존 App.jsx의 내용을 이쪽
 import { useState, useEffect } from 'react';
 import Login from './components/Login';
 import Assets from './pages/Assets';
+import ProcessAnalysis from './pages/ProcessAnalysis';
 
 function App() {
   const [user, setUser] = useState(null);
@@ -28,7 +29,8 @@ function App() {
         <Route element={user ? <MainLayout /> : <Navigate to="/login" />}>
           <Route path="/" element={<Dashboard />} />
           <Route path="/assets" element={<Assets />} /> 
-          <Route path="/analysis" element={<div>프로세스 분석 준비 중</div>} />
+          <Route path="/process_analysis" element={<ProcessAnalysis />} />
+          <Route path="/process_analysis/:execId" element={<ProcessAnalysis />} />
           {/* ... 나머지 페이지들 */}
         </Route>
       </Routes>

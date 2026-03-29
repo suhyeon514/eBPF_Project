@@ -3,7 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 const menuItems = [
   { path: '/', label: '대시보드', icon: '📊' },
   { path: '/assets', label: '자산 관리', icon: '🖄' },
-  { path: '/analysis', label: '프로세스 분석 및 시각화', icon: '📈' },
+  { path: '/process_analysis', label: '프로세스 분석 및 시각화', icon: '📈' },
   { path: '/events', label: '이벤트 로그 저장소', icon: '📂' },
   { path: '/forensics', label: '포렌식 덤프 저장소', icon: '💾' },
   { path: '/policy', label: '에이전트 정책 설정', icon: '⚙️' },
