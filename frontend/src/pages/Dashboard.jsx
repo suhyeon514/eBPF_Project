@@ -154,15 +154,52 @@ function StatusCard({ title, value, subText, color, icon }) {
 }
 
 function SeverityBadge({ severity }) {
-  const isCritical = severity === 'CRITICAL';
+  // 등급별 색상 및 스타일 매핑
+  const severityConfig = {
+    CRITICAL: {
+      bg: '#fff0f1', // 아주 연한 빨강
+      text: '#ff4757', // 진한 빨강
+      border: '#ff4757',
+      label: '🔴 CRITICAL'
+    },
+    HIGH: {
+      bg: '#fff5f0', // 연한 주황
+      text: '#ff7f50', // 주황 (Coral)
+      border: '#ff7f50',
+      label: '🟠 HIGH'
+    },
+    MEDIUM: {
+      bg: '#fffbe6', // 연한 노랑
+      text: '#ffa502', // 황금색 (Amber)
+      border: '#ffa502',
+      label: '🟡 MEDIUM'
+    },
+    LOW: {
+      bg: '#f1f2f6', // 연한 회색/블루
+      text: '#57606f', // 진한 회색 (Slate)
+      border: '#57606f',
+      label: '🔵 LOW'
+    }
+  };
+
+  // 대문자로 변환하여 매핑 값 찾기 (기본값 LOW)
+  const config = severityConfig[severity?.toUpperCase()] || severityConfig.LOW;
+
   return (
     <span style={{ 
-      padding: '4px 12px', borderRadius: '20px', fontSize: '11px', fontWeight: 'bold',
-      backgroundColor: isCritical ? '#fff0f1' : '#fff9f0',
-      color: isCritical ? '#ff4757' : '#ffa502',
-      border: `1px solid ${isCritical ? '#ff4757' : '#ffa502'}33`
+      display: 'inline-flex',
+      alignItems: 'center',
+      padding: '4px 10px', 
+      borderRadius: '6px', 
+      fontSize: '11px', 
+      fontWeight: '800',
+      backgroundColor: config.bg,
+      color: config.text,
+      border: `1px solid ${config.border}44`, // 투명도 44 추가
+      textTransform: 'uppercase',
+      letterSpacing: '0.5px'
     }}>
-      {severity}
+      {config.label}
     </span>
   );
 }

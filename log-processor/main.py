@@ -8,17 +8,158 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from name_map import FIELD_MAPPING, transform_logic
 import ipaddress
+from neo4j import GraphDatabase  # Neo4j 드라이버
+from concurrent.futures import ThreadPoolExecutor # 비동기 처리를 위한 스레드 풀
+
 
 # --- [1. 설정 및 환경변수] ---
-KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:29092")
-OPENSEARCH_HOST = os.getenv("OPENSEARCH_HOST", "opensearch")
-DATABASE_URL = os.getenv("DATABASE_URL")
+#KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "127.0.0.1:29092")
+#OPENSEARCH_HOST = os.getenv("OPENSEARCH_HOST", "127.0.0.1")
+#DATABASE_URL = os.getenv("DATABASE_URL")
+#NEO4J_URI = os.getenv("NEO4J_URI", "bolt://localhost:7687")
+#NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
+KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS") or "127.0.0.1:9092"
+OPENSEARCH_HOST = os.getenv("OPENSEARCH_HOST") or "127.0.0.1"
+DATABASE_URL = os.getenv("DATABASE_URL") or "postgresql://admin:goo423jo_Ming@127.0.0.1:6432/ebpf_db"
+NEO4J_URI = os.getenv("NEO4J_URI") or "bolt://localhost:7687"
+NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD") or "goo423jo_Ming"
+
+
 
 os_client = OpenSearch(
     hosts=[{"host": OPENSEARCH_HOST, "port": 9200}],
     use_ssl=False, 
     verify_certs=False
 )
+
+# --- [2. Neo4j 관리 클래스] ---
+class Neo4jManager:
+    def __init__(self):
+        self.driver = GraphDatabase.driver(NEO4J_URI, auth=("neo4j", NEO4J_PASSWORD))
+        self._init_constraints()
+
+    def _init_constraints(self):
+        """중복 방지 및 검색 속도를 위한 인덱스 설정"""
+        with self.driver.session() as session:
+            session.run("CREATE CONSTRAINT IF NOT EXISTS FOR (p:Process) REQUIRE p.exec_id IS UNIQUE")
+            session.run("CREATE INDEX IF NOT EXISTS FOR (p:Process) ON (p.pid)")
+
+    def upsert_data(self, topic, log):
+        """토픽별로 적절한 Neo4j 업데이트 로직 실행"""
+        risk = log.get("risk_info", {})
+        proc = log.get("process", {})
+        host = log.get("host", {})
+        exec_id = proc.get("exec_id")
+        
+        if not exec_id: return # 매핑할 키가 없으면 저장하지 않음
+
+        with self.driver.session() as session:
+            # 공통: 프로세스 노드 생성/업데이트 (MERGE)
+            session.execute_write(self._merge_process_node, log)
+
+            # 1. 프로세스 족보 연결 (부모-자식)
+            if topic == 'tetragon.process' and proc.get("parent_exe"):
+                session.execute_write(self._link_parent_child, log)
+
+            # 2. 행위 연결 (File Open/Write 등)
+            if topic == 'tetragon.file':
+                session.execute_write(self._link_file_activity, log)
+
+            # 3. 통신 연결 (Network Connect)
+            if topic in ['tetragon.network', 'network']:
+                session.execute_write(self._link_network_activity, log)
+
+    @staticmethod
+    def _merge_process_node(tx, log):
+        """두 번째 사진의 모든 권장 속성을 노드에 저장"""
+        proc = log.get("process", {})
+        host = log.get("host", {})
+        risk = log.get("risk_info", {})
+        
+        # 안전한 리스트 조인 처리
+        args_list = proc.get("args") or []
+        full_args = " ".join(map(str, args_list))
+
+        query = """
+        MERGE (p:Process {exec_id: $exec_id})
+        SET p.pid = $pid,
+            p.comm = $comm,
+            p.parent_exec_id = $parent_exec_id,
+            p.full_command_line = $args,
+            p.exe_path = $exe,
+            p.uid = $uid,
+            p.start_time = $timestamp,
+            p.risk_score = $score,
+            p.severity = $severity,
+            p.mitre_attack_id = $tech_id,
+            p.event_id = $event_id,
+            p.hostname = $hostname,
+            p.last_updated = timestamp()
+        """
+        tx.run(query, 
+            exec_id=proc.get("exec_id"),
+            pid=proc.get("pid"),
+            comm=proc.get("comm"),
+            parent_exec_id=proc.get("parent_exec_id"),
+            args=full_args,
+            exe=proc.get("exe"),
+            uid=proc.get("uid"),
+            timestamp=log.get("@timestamp"),
+            score=risk.get("score"),
+            severity=risk.get("severity"),
+            tech_id=risk.get("technique_id"),
+            event_id=log.get("event_id"),
+            hostname=host.get("hostname")
+        )
+
+    @staticmethod
+    def _link_parent_child(tx, log):
+        """프로세스 족보 연결"""
+        proc = log.get("process", {})
+        # 부모 노드를 먼저 이름 기반으로 생성(혹은 매칭) 후 연결
+        query = """
+        MATCH (child:Process {exec_id: $exec_id})
+        MERGE (parent:Process {comm: $parent_comm, exe_path: $parent_exe})
+        MERGE (parent)-[:CHILDREN]->(child)
+        """
+        tx.run(query, 
+            exec_id=proc.get("exec_id"),
+            parent_comm=proc.get("parent_comm"),
+            parent_exe=proc.get("parent_exe")
+        )
+
+    @staticmethod
+    def _link_file_activity(tx, log):
+        """특정 프로세스가 파일을 건드리는 행위 연결"""
+        proc = log.get("process", {})
+        file_path = log.get("file", {}).get("path", "unknown")
+        query = """
+        MATCH (p:Process {exec_id: $exec_id})
+        MERGE (f:File {path: $file_path})
+        MERGE (p)-[:ACCESSED {type: $event_type}]->(f)
+        """
+        tx.run(query, exec_id=proc.get("exec_id"), file_path=file_path, event_type=log.get("event_type"))
+
+    @staticmethod
+    def _link_network_activity(tx, log):
+        """특정 프로세스의 통신 연결"""
+        proc = log.get("process", {})
+        net = log.get("network", {})
+        dest_ip = net.get("dst_ip", "0.0.0.0")
+        dest_port = net.get("dst_port", 0)
+        
+        query = """
+        MATCH (p:Process {exec_id: $exec_id})
+        MERGE (d:NetworkEndpoint {ip: $dest_ip, port: $dest_port})
+        MERGE (p)-[:COMMUNICATED {protocol: $proto}]->(d)
+        """
+        tx.run(query, 
+            exec_id=proc.get("exec_id"), 
+            dest_ip=dest_ip, 
+            dest_port=dest_port, 
+            proto=net.get("protocol")
+        )
+
 
 # --- [2. 유틸리티 함수] ---
 
@@ -204,85 +345,98 @@ class DetectionEngine:
                 matched_results.append(rule)
         return matched_results
 
-# --- [5. 메인 워커 루프] ---
+def process_and_save(raw_log, topic, engine, neo4j_mgr):
+    """Kafka 메시지를 처리하고 OpenSearch/Neo4j에 비동기로 저장"""
+    
+    # [핵심 추가] 탐지 규칙 주기적 갱신 호출
+    engine.refresh_rules()
 
+    # 데이터 정규화 및 위험도 연산
+    f_log = flatten_log(raw_log)
+    n_log = normalize_log(f_log)
+    matches = engine.match(n_log)
+
+    # 타임스탬프 기반 날짜 추출
+    agent_ts = raw_log.get("@timestamp")
+    log_date = datetime.now(timezone.utc).strftime("%Y.%m.%d") # 기본값
+    if isinstance(agent_ts, (int, float)):
+        log_date = datetime.fromtimestamp(agent_ts, tz=timezone.utc).strftime("%Y.%m.%d")
+
+    raw_log["processed_at"] = datetime.now(timezone.utc).isoformat()
+    raw_log["kafka_topic"] = topic
+
+    if matches:
+        # 가장 높은 점수의 매칭 결과 선택
+        best_match = None
+        max_score = -1
+        for rule in matches:
+            score, sev = calculate_dynamic_risk(n_log, rule)
+            if score > max_score:
+                max_score, best_match, final_sev = score, rule, sev
+        
+        raw_log['risk_info'] = {
+            "detected": True, "rule_name": best_match['rule_name'], "severity": final_sev,
+            "score": max_score, "base_score": best_match['base_score'],
+            "tactic": best_match['mitre_tactic'], "technique_id": best_match['mitre_technique_id']
+        }
+        print(f"⚠️ [ALERT] {final_sev} - {best_match['rule_name']} ({max_score})")
+    else:
+        raw_log['risk_info'] = {"detected": False, "score": 1, "severity": "Low"}
+        print(".", end="", flush=True)
+
+    # 1. OpenSearch 저장 (예외 처리 추가)
+    try:
+        target_index = f"security-{topic}-{log_date}"
+        os_client.index(index=target_index, body=raw_log)
+        if raw_log['risk_info']['detected']:
+            alert_index = f"security-alerts-{log_date}"
+            os_client.index(index=alert_index, body=raw_log)
+    except Exception as e:
+        print(f"❌ OpenSearch 저장 오류: {e}")
+
+    # 2. Neo4j 저장 (조건부 필터링)
+    score = raw_log['risk_info'].get('score', 0)
+    if topic == 'tetragon.process' or score >= 25:
+        try:
+            neo4j_mgr.upsert_data(topic, raw_log)
+        except Exception as e:
+            print(f"❌ Neo4j 저장 오류 ({topic}): {e}")
+
+
+# --- [5. 메인 워커 루프] ---
 def main():
     engine = DetectionEngine(DATABASE_URL)
-    topics = ['tetragon.process', 'tetragon.auth', 'tetragon.network', 'tetragon.file', 'network', 'auditd', 'journald', 'sensor']
+    neo4j_mgr = Neo4jManager()
 
+    # 비동기 처리를 위한 스레드 풀 (Kafka의 Fetch를 방해하지 않음)
+    executor = ThreadPoolExecutor(max_workers=10)
+
+    topics = ['tetragon.process', 'tetragon.auth', 'tetragon.network', 'tetragon.file', 'network', 'auditd', 'journald', 'sensor']
+    print("🔍 카프카 서버에 연결 시도 중...")
     consumer = KafkaConsumer(
         *topics,
         bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
-        group_id='k9-detection-group',
+        group_id='k9-detection-group-z',
         auto_offset_reset='earliest',
         value_deserializer=lambda m: json.loads(m.decode('utf-8'))
     )
+    print("✅ 연결 시도 완료 (성공 여부 확인 중...)")
+    if consumer.bootstrap_connected():
+        print("🟢 카프카 브로커와 연결되었습니다!")
+    else:
+        print("🔴 연결에 실패했습니다. (Bootstrap 서버 응답 없음)")
 
-    print(f"🚀 워커 시작: {len(topics)}개 토픽 모니터링 중...")
+    print(f"🚀 [Async Worker] {len(topics)}개 토픽 모니터링 및 그래프 분석 시작...")
 
-    for message in consumer:
-        raw_log = message.value
-        topic = message.topic
-        
-        agent_ts = raw_log.get("@timestamp")
-        try:
-            dt_object = datetime.fromtimestamp(agent_ts, tz=timezone.utc) if isinstance(agent_ts, (int, float)) else datetime.fromisoformat(str(agent_ts).replace('Z', '+00:00'))
-            log_date = dt_object.strftime("%Y.%m.%d")
-        except:
-            log_date = datetime.now(timezone.utc).strftime("%Y.%m.%d")
-
-        raw_log["processed_at"] = datetime.now(timezone.utc).isoformat()
-        raw_log["kafka_topic"] = topic
-
-        engine.refresh_rules()
-
-        if raw_log.get("event_type") == "edr.system.resource":
-            hostname = raw_log.get("host", {}).get("hostname")
-            resource = raw_log.get("resource", {})
-            if hostname and resource:
-                engine.upsert_asset(hostname, resource)
-
-        f_log = flatten_log(raw_log)
-        n_log = normalize_log(f_log)
-        matches = engine.match(n_log)
-
-        target_index = f"security-{topic}-{log_date}"
-        alert_index = f"security-alerts-{log_date}"
-        
-        if matches:
-            best_match = None
-            max_calculated_score = -1
-            final_severity = "None"
-
-            for rule in matches:
-                calc_score, calc_sev = calculate_dynamic_risk(n_log, rule)
-                if calc_score > max_calculated_score:
-                    max_calculated_score = calc_score
-                    final_severity = calc_sev
-                    best_match = rule
-            
-            print(f"⚠️  [ALERT] {final_severity} - {best_match['rule_name']} (Final Score: {max_calculated_score})")
-            
-            raw_log['risk_info'] = {
-                "detected": True,
-                "rule_name": best_match['rule_name'],
-                "severity": final_severity,
-                "score": max_calculated_score,
-                "base_score": best_match['base_score'],
-                "tactic": best_match['mitre_tactic'],
-                "technique_id": best_match['mitre_technique_id']
-            }
-            os_client.index(index=alert_index, body=raw_log)
-        else:
-            # 탐지되지 않은 일반 로그도 실무 관례에 따라 최소 점수 1점(Low) 부여
-            print(".", end="", flush=True)
-            raw_log['risk_info'] = {
-                "detected": False, 
-                "score": 1, 
-                "severity": "Low"
-            }
-
-        os_client.index(index=target_index, body=raw_log)
+    try:
+        for message in consumer:
+            # 메인 thread는 오직 던져주기만 합니다. (Non-blocking)
+            executor.submit(process_and_save, message.value, message.topic, engine, neo4j_mgr)
+    except KeyboardInterrupt:
+        print("\n👋 워커 종료 중...")
+    finally:
+        executor.shutdown(wait=True)
+        neo4j_mgr.driver.close()
 
 if __name__ == "__main__":
     time.sleep(15)

@@ -2,6 +2,10 @@ import os
 from pathlib import Path
 from datetime import datetime, timezone
 from dotenv import load_dotenv
+
+env_path = Path(__file__).resolve().parent.parent.parent / ".env"
+load_dotenv(dotenv_path=env_path)
+
 from fastapi import FastAPI, Depends, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,15 +24,13 @@ from .api.dashboard.service import DashboardService
 from apscheduler.schedulers.background import BackgroundScheduler
 from .api.policy.router import router as policy_router  # 정책 라우터 임포트
 from .api.forensic.router import router as forensic_router  # 포렌식 라우터 임포트
-<<<<<<< HEAD
+from .api.analysis.router import router as analysis_router
 from .api.process_analysis.router import router as process_analysis_router
-=======
 from .api.enroll.router import router as enroll_router      # 등록 라우터 임포트
 from .api.runtime.router import router as runtime_router    # 런타임 정책 라우터 임포트
 from .api.agent.router import router as agent_router        # 에이전트 heartbeat 라우터
 from .api.artifacts.router import router as artifacts_router  # 아티팩트 배포 라우터
 from .core.ca import init_ca
->>>>>>> 8c176c99cdeda62996b24a42eebf8cb69b6a7aff
 
 env_path = Path(__file__).resolve().parent.parent.parent / ".env"
 load_dotenv(dotenv_path=env_path)
@@ -74,12 +76,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# 라우터 등록
 # [라우터 등록] 분리한 인증 기능을 앱에 포함
 app.include_router(auth_router)
 app.include_router(dashboard_router)
 app.include_router(assets_router)
 app.include_router(policy_router)
 app.include_router(forensic_router)
+app.include_router(analysis_router)
+
 # 프로세스 분석 라우터 추가
 app.include_router(process_analysis_router)
 # 에이전트 등록 라우터 추가
@@ -92,9 +97,11 @@ app.include_router(agent_router)
 app.include_router(artifacts_router)
 
 # --- 인프라 설정 및 Health Check ---
+# --- 인프라 설정 및 Health Check (기존 코드 유지) ---
+
+NEO4J_URI = os.getenv("NEO4J_URI")
+NEO4J_USER = os.getenv("NEO4J_USER")
 NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
-NEO4J_URI = "bolt://localhost:7687"
-NEO4J_USER = "neo4j"
 
 # --- [스케줄러 설정] ---
 def update_dashboard_task():
@@ -127,6 +134,8 @@ def mark_offline_agents_task():
 scheduler = BackgroundScheduler()
 scheduler.add_job(update_dashboard_task, 'interval', minutes=1)
 scheduler.add_job(mark_offline_agents_task, 'interval', minutes=1)
+# 1분마다 실행하려면 minutes=1, 10분마다 실행하려면 minutes=10으로 수정하세요!
+scheduler.add_job(update_dashboard_task, 'interval', minutes=3) 
 scheduler.start()
 
 @app.on_event("startup")

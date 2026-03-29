@@ -10,14 +10,11 @@ import Forensics from './pages/Forensics';
 import Policy from './pages/Policy';
 import Analysis from './pages/Analysis';
 import apiClient from './api/client';
+import Analysis from './pages/Analysis';
 
 function App() {
   const [user, setUser] = useState(null);
-
-  useEffect(() => {
-    const savedUser = localStorage.getItem('ebpf_user');
-    if (savedUser) setUser(JSON.parse(savedUser));
-  }, []);
+  const [loading, setLoading] = useState(true); // 로딩 상태 추가
 
   const handleLoginSuccess = (userData) => {
     setUser(userData);
@@ -32,24 +29,31 @@ function App() {
     setUser(null);
   };
 
+  // useEffect(() => {
+  //   const savedUser = localStorage.getItem('ebpf_user');
+  //   if (savedUser) {
+  //     setUser(JSON.parse(savedUser));
+  //   }
+  //   setLoading(false); // 체크가 끝나면 로딩 완료
+  // }, []);
+
+  // // 유저 체크가 끝나기 전에는 아무것도 렌더링하지 않거나 로딩 스피너를 보여줌
+  // if (loading) return null;
+
   return (
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={!user ? <Login onLoginSuccess={handleLoginSuccess} /> : <Navigate to="/" />} />
         <Route element={user ? <MainLayout onLogout={handleLogout} /> : <Navigate to="/login" />}>
           <Route path="/" element={<Dashboard />} />
-<<<<<<< HEAD
           <Route path="/assets" element={<Assets />} /> 
           <Route path="/process_analysis" element={<ProcessAnalysis />} />
           <Route path="/process_analysis/:execId" element={<ProcessAnalysis />} />
-          {/* ... 나머지 페이지들 */}
-=======
-          <Route path="/assets" element={<Assets />} />
           <Route path="/analysis" element={<Analysis />} />
+          <Route path="/analysis/:execId" element={<Analysis />} />
           <Route path="/events" element={<Events />} />
           <Route path="/forensics" element={<Forensics />} />
           <Route path="/policy" element={<Policy />} />
->>>>>>> 8c176c99cdeda62996b24a42eebf8cb69b6a7aff
         </Route>
       </Routes>
     </BrowserRouter>

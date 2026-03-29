@@ -201,3 +201,20 @@ class DetectionRule(DetectionRuleBase):
 
     class Config:
         from_attributes = True # SQLAlchemy 모델을 Pydantic으로 자동 변환
+
+class ProcessNode(BaseModel):
+    id: str         # Neo4j의 exec_id 혹은 고유값
+    label: str      # 화면에 표시될 이름 (예: comm)
+    pid: int
+    risk_score: float
+    severity: str
+    cmd: str        # 상세 정보용 인자값
+
+class ProcessEdge(BaseModel):
+    source: str     # 부모의 id
+    target: str     # 자식의 id
+    type: str = "CHILDREN"
+
+class GraphResponse(BaseModel):
+    nodes: List[ProcessNode]
+    edges: List[ProcessEdge]

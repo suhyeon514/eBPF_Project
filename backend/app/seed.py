@@ -28,7 +28,7 @@ def seed_db():
         if not db.query(User).filter(User.username == "admin").first():
             admin_user = User(
                 username="admin",
-                password_hash=get_password_hash("admin123!"),
+                password_hash=get_password_hash("ADMIN"),
                 full_name="관리자",
                 role_id=admin_role.id,
                 email="admin@example.com"
