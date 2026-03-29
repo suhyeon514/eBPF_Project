@@ -1,5 +1,21 @@
 import { useState, useEffect } from 'react';
-import axios from 'axios';
+import apiClient from '../api/client';
+
+function downloadCSV(data) {
+  const headers = ['호스트명', 'IP 주소', 'OS', '상태', 'CPU(%)', '메모리(%)', '위험점수', '미배정 알람'];
+  const rows = data.map(a => [
+    a.hostname, a.ip_address, a.os_info, a.status,
+    a.cpu_usage, a.memory_usage, a.risk_score, a.unassigned_alerts_count
+  ]);
+  const csv = [headers, ...rows].map(r => r.map(v => `"${v ?? ''}"`).join(',')).join('\n');
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `assets_${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 function Assets() {
   const [assets, setAssets] = useState([]);
@@ -9,19 +25,17 @@ function Assets() {
   const [statusFilter, setStatusFilter] = useState("전체");
 
   const pageSize = 10;
-  const API_URL = "http://localhost:8000/api/v1/assets/";
 
   // 데이터 가져오기 함수
   const fetchAssets = async () => {
     try {
-      const response = await axios.get(API_URL, {
+      const response = await apiClient.get('/api/v1/assets/', {
         params: {
           search: search,
           status: statusFilter === "전체" ? null : statusFilter,
           page: currentPage,
           size: pageSize
         },
-        withCredentials: true
       });
       setAssets(response.data.items);
       setTotal(response.data.total);
@@ -76,7 +90,7 @@ function Assets() {
         >
           {["전체", "정상", "주의", "위험", "오프라인"].map(s => <option key={s} value={s}>{s}</option>)}
         </select>
-        <button style={csvBtnStyle}>📥 CSV 추출</button>
+        <button onClick={() => downloadCSV(assets)} style={csvBtnStyle}>📥 CSV 추출</button>
       </div>
     </div>
 

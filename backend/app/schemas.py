@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field
 from typing import Optional, List, Any
 from datetime import datetime
+from enum import Enum
 
 # --- [1] 공통 하위 객체들 ---
 
@@ -97,6 +98,84 @@ class TopAlertResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+# --- [5] 에이전트 등록(Enrollment) 관련 스키마 ---
+
+class EnrollResult(str, Enum):
+    approved = "approved"
+    pending  = "pending"
+    rejected = "rejected"
+
+class AgentFingerprint(BaseModel):
+    machine_id: str
+    hostname: str
+    ip_address: Optional[str] = None
+    os_id: str
+    os_version: str
+    cloud_instance_id: Optional[str] = None
+
+class EnrollRequest(BaseModel):
+    host_id: str
+    install_uuid: str
+    fingerprint: AgentFingerprint
+    csr_pem: str
+    requested_env: Optional[str] = None
+    requested_role: Optional[str] = None
+
+class EnrollResponse(BaseModel):
+    result: EnrollResult
+    request_id: str
+    reason_code: Optional[str] = None
+    message: Optional[str] = None
+    agent_id: Optional[str] = None
+    certificate_pem: Optional[str] = None
+    assigned_env: Optional[str] = None
+    assigned_role: Optional[str] = None
+
+class EnrollStatusResponse(EnrollResponse):
+    pass
+
+class EnrollApproveRequest(BaseModel):
+    agent_id: Optional[str] = None
+    assigned_env: Optional[str] = None
+    assigned_role: Optional[str] = None
+
+class EnrollRejectRequest(BaseModel):
+    reason_code: Optional[str] = None
+    message: Optional[str] = None
+
+class AgentHeartbeatRequest(BaseModel):
+    hostname: str
+    ip_address: str
+    cpu_usage: float
+    memory_usage: float
+    os_info: Optional[str] = None
+
+
+class EnrollmentRequestItem(BaseModel):
+    request_id: str
+    hostname: str
+    os_id: str
+    os_version: str
+    status: str
+    requested_env: Optional[str] = None
+    requested_role: Optional[str] = None
+    assigned_env: Optional[str] = None
+    assigned_role: Optional[str] = None
+    agent_id: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# --- [6] 런타임 정책 관련 스키마 ---
+
+class RuntimePolicyResponse(BaseModel):
+    policy_yaml: str
+    assigned_env: Optional[str] = None
+    assigned_role: Optional[str] = None
+
 
 class DetectionRuleBase(BaseModel):
     target_topic: str

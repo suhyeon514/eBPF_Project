@@ -9,19 +9,23 @@ const menuItems = [
   { path: '/policy', label: '에이전트 정책 설정', icon: '⚙️' },
 ];
 
-function Sidebar() {
+function Sidebar({ onLogout }) {
   const location = useLocation();
 
   return (
-    <div style={{ width: '260px', backgroundColor: '#fff', height: '100vh', borderRight: '1px solid #eee', padding: '20px', flexShrink: 0 }}>
-    <div style={{ fontSize: '28px', fontWeight: '900', color: '#6c5ce7', marginBottom: '40px', letterSpacing: '-1px' }}>
-      🐧 K9 <span style={{ fontSize: '14px', fontWeight: '500', color: '#aaa' }}>Kernal 9</span>
-    </div>
-      <nav>
+    <div style={{
+      width: '260px', backgroundColor: '#fff', height: '100vh', borderRight: '1px solid #eee',
+      padding: '20px', flexShrink: 0, display: 'flex', flexDirection: 'column'
+    }}>
+      <div style={{ fontSize: '28px', fontWeight: '900', color: '#6c5ce7', marginBottom: '40px', letterSpacing: '-1px' }}>
+        🐧 K9 <span style={{ fontSize: '14px', fontWeight: '500', color: '#aaa' }}>Kernal 9</span>
+      </div>
+      <nav style={{ flex: 0.95 }}>
         {menuItems.map((item) => (
           <Link key={item.path} to={item.path} style={{
             display: 'flex', alignItems: 'center', padding: '12px 15px', marginBottom: '8px',
-            borderRadius: '10px', textDecoration: 'none', color: location.pathname === item.path ? '#6c5ce7' : '#555',
+            borderRadius: '10px', textDecoration: 'none',
+            color: location.pathname === item.path ? '#6c5ce7' : '#555',
             backgroundColor: location.pathname === item.path ? '#f0eeff' : 'transparent',
             fontWeight: location.pathname === item.path ? 'bold' : 'normal'
           }}>
@@ -29,6 +33,17 @@ function Sidebar() {
           </Link>
         ))}
       </nav>
+      <button
+        onClick={onLogout}
+        style={{
+          display: 'flex', alignItems: 'center', width: '100%', padding: '12px 15px',
+          borderRadius: '10px', border: 'none', backgroundColor: 'transparent',
+          color: '#ff4757', cursor: 'pointer', fontWeight: 'bold', fontSize: '14px',
+          marginTop: '8px',
+        }}
+      >
+        <span style={{ marginRight: '12px' }}>🚪</span> 로그아웃
+      </button>
     </div>
   );
 }

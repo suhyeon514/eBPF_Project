@@ -1,153 +1,22 @@
-import os
-import uuid
-import random
 import bcrypt
-from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session
-from opensearchpy import OpenSearch
-from .models import DetectionRule, User, Role, Assets
+from .models import DetectionRule, User, Role
 from .database import SessionLocal, engine, Base
 
-# 1. OpenSearch 연결 설정 (로컬 도커 환경)
-os_client = OpenSearch(
-    hosts=[{"host": "localhost", "port": 9200}],
-    use_ssl=False,
-    verify_certs=False,
-    sniff_on_start=False
-)
 
-# 2. 비밀번호 암호화 함수
 def get_password_hash(password: str) -> str:
     pwd_bytes = password.encode('utf-8')
     salt = bcrypt.gensalt()
     return bcrypt.hashpw(pwd_bytes, salt).decode('utf-8')
 
-# --- [추가] 자산 샘플 데이터 생성 함수 ---
-def seed_assets(db: Session):
-    print("🖥️ 자산(Assets) 샘플 데이터 생성 중...")
-    
-    # 이미 데이터가 있으면 건너뜀
-    if db.query(Assets).count() > 0:
-        print("⏭️ 자산 데이터가 이미 존재하여 건너뜁니다.")
-        return
-
-    asset_samples = [
-        # 웹 서버군
-        {"hostname": "web-prod-01", "ip": "192.168.10.11", "os": "Ubuntu 22.04 LTS", "status": "정상", "risk": 5},
-        {"hostname": "web-prod-02", "ip": "192.168.10.12", "os": "Ubuntu 22.04 LTS", "status": "정상", "risk": 12},
-        {"hostname": "web-dev-test", "ip": "192.168.10.50", "os": "Ubuntu 20.04 LTS", "status": "주의", "risk": 45},
-        
-        # DB 서버군
-        {"hostname": "db-master-01", "ip": "10.0.1.10", "os": "Debian 11", "status": "정상", "risk": 0},
-        {"hostname": "db-slave-01", "ip": "10.0.1.11", "os": "Debian 11", "status": "오프라인", "risk": 0},
-        
-        # 관리 및 보안 서버
-        {"hostname": "k9-mgmt-srv", "ip": "10.0.0.5", "os": "Ubuntu 22.04 LTS", "status": "정상", "risk": 2},
-        {"hostname": "auth-radius", "ip": "10.0.0.20", "os": "CentOS 7", "status": "위험", "risk": 88},
-        
-        # 연구실/테스트 기기 (사용자님 환경 반영)
-        {"hostname": "lab-mini-pc", "ip": "192.168.50.100", "os": "Kali Linux 2024.1", "status": "정상", "risk": 15},
-        {"hostname": "honey-pot-01", "ip": "192.168.50.200", "os": "Ubuntu 18.04 LTS", "status": "위험", "risk": 95},
-        {"hostname": "gitlab-local", "ip": "192.168.50.10", "os": "Ubuntu 22.04 LTS", "status": "주의", "risk": 30},
-    ]
-
-    # 부족한 개수는 랜덤으로 채움 (총 15개)
-    for i in range(len(asset_samples), 15):
-        asset_samples.append({
-            "hostname": f"workstation-{i:02d}",
-            "ip": f"172.16.0.{100+i}",
-            "os": random.choice(["Ubuntu 22.04 LTS", "Debian 12", "Fedora 39"]),
-            "status": random.choice(["정상", "정상", "주의", "오프라인"]), # 정상이 많이 나오도록
-            "risk": random.randint(0, 40)
-        })
-
-    for item in asset_samples:
-        asset = Assets(
-            hostname=item["hostname"],
-            ip_address=item["ip"],
-            os_info=item["os"],
-            status=item["status"],
-            cpu_usage=round(random.uniform(1.5, 65.0), 1),
-            memory_usage=round(random.uniform(10.0, 85.0), 1),
-            risk_score=item["risk"],
-            unassigned_alerts_count=random.randint(0, 5) if item["risk"] < 50 else random.randint(5, 20),
-            last_heartbeat=datetime.now(timezone.utc) - timedelta(minutes=random.randint(0, 120))
-        )
-        db.add(asset)
-    
-    db.commit()
-    print(f"✅ 자산 샘플 데이터 {db.query(Assets).count()}건 삽입 완료")
-
-# 3. 30개의 샘플 로그 생성 함수 (프로세스 10, 네트워크 10, 인증 10)
-def generate_mock_logs():
-    logs = []
-    hosts = [
-        {"host_id": "host-web-01", "hostname": "web-srv", "env": "prod", "role": "web-server"},
-        {"host_id": "host-db-01", "hostname": "db-srv", "env": "prod", "role": "database"},
-        {"host_id": "host-lab-01", "hostname": "mini-pc", "env": "lab", "role": "test"}
-    ]
-
-    # --- (1) 프로세스 로그 10건 ---
-    for _ in range(10):
-        logs.append({
-            "schema_version": "v1",
-            "event_id": str(uuid.uuid4()),
-            "event_type": random.choice(["edr.process.exec", "edr.process.exit"]),
-            "@timestamp": datetime.now(timezone.utc).isoformat(), 
-            "host": random.choice(hosts),
-            "collector": {"name": "tetragon", "source_type": "ebpf"},
-            "process": {
-                "pid": random.randint(1000, 9999),
-                "comm": "bash",
-                "exe": "/bin/bash",
-                "uid": 1000,
-                "gid": 1000
-            },
-            "raw_ref": {"source": "tetragon", "raw_type": "process_event"}
-        })
-
-    # --- (2) 네트워크 로그 10건 ---
-    for _ in range(10):
-        logs.append({
-            "schema_version": "v1",
-            "event_id": str(uuid.uuid4()),
-            "event_type": "edr.network.flow",
-            "@timestamp": datetime.now(timezone.utc).isoformat(),
-            "host": random.choice(hosts),
-            "collector": {"name": "conntrack", "source_type": "flow"},
-            "network": {
-                "protocol": "tcp",
-                "src_ip": "192.168.1.50",
-                "src_port": random.randint(10000, 60000),
-                "dst_ip": "8.8.8.8",
-                "dst_port": 443,
-                "action": "NEW"
-            },
-            "raw_ref": {"source": "conntrack", "raw_type": "flow_event"}
-        })
-
-    # --- (3) 인증 로그 10건 ---
-    for _ in range(10):
-        logs.append({
-            "schema_version": "v1",
-            "event_id": str(uuid.uuid4()),
-            "event_type": "edr.auth.sudo",
-            "@timestamp": datetime.now(timezone.utc).isoformat(),
-            "host": random.choice(hosts),
-            "auth": {"method": "sudo", "result": "success"},
-            "raw_ref": {"source": "journald", "raw_type": "auth_event"}
-        })
-
-    return logs
 
 def seed_db():
-    print("⏳ 도커 컨테이너 DB(PostgreSQL) 및 OpenSearch 초기화 중...")
-    # 테이블 생성 (Assets 모델이 models.py에 있다면 여기서 함께 생성됩니다)
-    Base.metadata.create_all(bind=engine) 
+    print("⏳ DB 초기화 중...")
+    Base.metadata.create_all(bind=engine)
     db: Session = SessionLocal()
-    
+
     try:
-        # [1] PostgreSQL 초기화 (계정 및 권한)
+        # 관리자 계정
         print("👤 관리자 계정 생성 중...")
         admin_role = db.query(Role).filter(Role.role_name == "admin").first()
         if not admin_role:
@@ -166,25 +35,10 @@ def seed_db():
             )
             db.add(admin_user)
             db.commit()
-        
+
         print("✅ PostgreSQL 설정 완료")
-
-        seed_assets(db)           # 👈 자산 데이터 생성 함수 호출
-        seed_detection_rules(db)  # 👈 탐지 룰 생성 함수 호출
-
-        # [2] OpenSearch 초기화 (로그 데이터)
-        print("🔍 OpenSearch 샘플 로그 생성 중...")
-        index_name = f"ebpf-logs-{datetime.now().strftime('%Y.%m.%d')}"
-        
-        if not os_client.indices.exists(index=index_name):
-            os_client.indices.create(index=index_name)
-
-        mock_logs = generate_mock_logs()
-        for log in mock_logs:
-            os_client.index(index=index_name, body=log)
-        
-        print(f"✅ OpenSearch 샘플 데이터 {len(mock_logs)}건 삽입 완료")
-        print("\n✨ 모든 데이터 초기 설정이 완료되었습니다!")
+        seed_detection_rules(db)
+        print("\n✨ 초기 설정 완료. 자산 데이터는 에이전트 heartbeat로 자동 등록됩니다.")
 
     except Exception as e:
         print(f"❌ 오류 발생: {e}")

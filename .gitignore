@@ -15,3 +15,8 @@ Thumbs.db
 *.db
 
 /policy_contents/
+
+# CA 키 및 인증서 (절대 커밋 금지)
+certs/
+
+/backend/artifacts/

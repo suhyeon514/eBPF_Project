@@ -1,10 +1,15 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import MainLayout from './layouts/MainLayout';
-import Dashboard from './pages/Dashboard'; // 기존 App.jsx의 내용을 이쪽으로 옮깁니다.
 import { useState, useEffect } from 'react';
+import MainLayout from './layouts/MainLayout';
 import Login from './components/Login';
+import Dashboard from './pages/Dashboard';
 import Assets from './pages/Assets';
 import ProcessAnalysis from './pages/ProcessAnalysis';
+import Events from './pages/Events';
+import Forensics from './pages/Forensics';
+import Policy from './pages/Policy';
+import Analysis from './pages/Analysis';
+import apiClient from './api/client';
 
 function App() {
   const [user, setUser] = useState(null);
@@ -19,19 +24,32 @@ function App() {
     localStorage.setItem('ebpf_user', JSON.stringify(userData));
   };
 
+  const handleLogout = async () => {
+    try {
+      await apiClient.post('/api/v1/auth/logout');
+    } catch (_) {}
+    localStorage.removeItem('ebpf_user');
+    setUser(null);
+  };
+
   return (
     <BrowserRouter>
       <Routes>
-        {/* 로그인이 안 되어 있으면 /login으로 이동, 되어 있으면 대시보드 표시 */}
         <Route path="/login" element={!user ? <Login onLoginSuccess={handleLoginSuccess} /> : <Navigate to="/" />} />
-        
-        {/* 메인 레이아웃 적용 구역 */}
-        <Route element={user ? <MainLayout /> : <Navigate to="/login" />}>
+        <Route element={user ? <MainLayout onLogout={handleLogout} /> : <Navigate to="/login" />}>
           <Route path="/" element={<Dashboard />} />
+<<<<<<< HEAD
           <Route path="/assets" element={<Assets />} /> 
           <Route path="/process_analysis" element={<ProcessAnalysis />} />
           <Route path="/process_analysis/:execId" element={<ProcessAnalysis />} />
           {/* ... 나머지 페이지들 */}
+=======
+          <Route path="/assets" element={<Assets />} />
+          <Route path="/analysis" element={<Analysis />} />
+          <Route path="/events" element={<Events />} />
+          <Route path="/forensics" element={<Forensics />} />
+          <Route path="/policy" element={<Policy />} />
+>>>>>>> 8c176c99cdeda62996b24a42eebf8cb69b6a7aff
         </Route>
       </Routes>
     </BrowserRouter>

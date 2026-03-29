@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import axios from 'axios';
+import apiClient from '../api/client';
 
 function Login({ onLoginSuccess }) {
   const [username, setUsername] = useState('');
@@ -9,11 +9,9 @@ function Login({ onLoginSuccess }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    
-    try {
-      const apiUrl = import.meta.env.VITE_API_URL;
 
-      const response = await axios.post(`${apiUrl}/api/v1/auth/login`, {
+    try {
+      const response = await apiClient.post('/api/v1/auth/login', {
         username,
         password
       });
