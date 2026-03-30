@@ -1,0 +1,16 @@
+version: 1.0
+
+deny:
+  process:
+    - nc
+    - bash
+    - nmap
+    - curl
+
+  file:
+    - /etc/shadow
+    - /etc/passwd
+
+focus:
+  file:
+    - /var/log

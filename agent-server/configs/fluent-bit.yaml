@@ -1,0 +1,28 @@
+service:
+  flush: 1
+  log_level: info
+
+parsers:
+  - name: edr_json
+    format: json
+    time_key: event_time
+    time_format: '%Y-%m-%dT%H:%M:%S.%LZ'
+
+pipeline:
+  inputs:
+    - name: tail
+      path: /home/jeong/work/eBPF_Project/testdata/normalized_test.jsonl
+      tag: edr.events
+      parser: edr_json
+      db: /var/lib/fluent-bit/state/edr-events.db
+      read_from_head: true
+      refresh_interval: 2
+
+  outputs:
+    - name: kafka
+      match: edr.events
+      brokers: 54.162.40.179:9092
+      topics: sensor,tetragon.network,tetragon.file,tetragon.process,tetragon.auth,network,journald,auditd
+      topic_key: route_topic
+      dynamic_topic: off
+      format: json

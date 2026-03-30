@@ -1,0 +1,26 @@
+server:
+  base_url: "http://localhost:8000"
+  ca_cert_path: "/etc/ebpf-edr/certs/ca.crt"
+  enroll_request_path: "/api/v1/enroll/request"
+  enroll_status_path: "/api/v1/enroll/requests"
+  heartbeat_path: "/api/v1/heartbeat"
+  policy_path: "/api/v1/policy/check-update"
+
+identity:
+  host_id: "host-lab-001"
+  env: "lab"
+  role: "test"
+
+paths:
+  state_path: "/var/lib/ebpf-edr/state.json"
+  private_key_path: "/etc/ebpf-edr/certs/client.key"
+  csr_path: "/var/lib/ebpf-edr/client.csr"
+  certificate_path: "/etc/ebpf-edr/certs/client.crt"
+  # policy_path: "/var/lib/ebpf-edr/policies"
+  policy_path: "/var/lib/ebpf-edr/policy.yaml"
+
+enrollment:
+  request_timeout: 10s
+  poll_interval: 15s
+  pending_retry_interval: 30s
+  max_pending_duration: 24h

@@ -1,0 +1,43 @@
+host:
+  hostname: "mini"
+
+collectors:
+  tetragon:
+    enabled: true
+    log_path: "/var/log/tetragon/tetragon.log"
+    poll_interval: 1s
+    read_from_head: false
+
+  journald:
+    enabled: true
+    profiles: ["sshd", "sudo", "su", "systemd"]
+    tail_lines: 20
+
+  auditd:
+    enabled: true
+    log_path: "/var/log/audit/audit.log"
+    poll_interval: 1s
+    read_from_head: false
+
+  conntrack:
+    enabled: true
+    args: ["-E", "-o", "timestamp,extended"]
+    restart_on_exit: true
+    restart_delay: 2s
+
+  nftables:
+    enabled: true
+    log_path: "/var/log/kern.log"
+    poll_interval: 1s
+    read_from_head: false
+    prefixes: ["NFT_DROP", "NFT_ACCEPT", "NFT_TRACE", "NFT_LOG"]
+
+  nginx:
+    enabled: false
+    log_path: "/var/log/nginx/access.log"
+
+  resource:
+    poll_interval: 10s
+
+output:
+  normalized_path: "testdata/normalized.jsonl"

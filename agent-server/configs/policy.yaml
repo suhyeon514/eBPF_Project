@@ -1,0 +1,9 @@
+version: 1.0
+deny:
+- nc
+- nmap
+- bash
+focus:
+- /etc/passwd
+- /etc/shadow
+- /var/log

@@ -1,0 +1,23 @@
+go.mod
+go.sum
+
+*.sh
+
+/configs/
+/testdata/
+
+# 2. 로그 파일 (용량이 크고 민감한 정보 포함)
+*.log
+*.jsonl
+
+# 3. 환경 변수 및 설정 파일 (비밀번호, 토큰 등)
+.env
+secret.json
+
+# 4. OS 관련 임시 파일
+.DS_Store
+Thumbs.db
+
+# 5. IDE(에디터) 설정 파일
+.vscode/
+.idea/

@@ -1,0 +1,22 @@
+# 비밀번호 및 환경변수 (절대 금지)
+.env
+
+# 가상환경
+venv/
+__pycache__/
+
+# 노드 패키지
+node_modules/
+
+# OS 생성 파일
+.DS_Store
+Thumbs.db
+
+*.db
+
+/policy_contents/
+
+# CA 키 및 인증서 (절대 커밋 금지)
+certs/
+
+/backend/artifacts/
