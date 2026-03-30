@@ -1,8 +1,6 @@
 <img width="816" height="600" alt="화면 캡처 2026-03-30 215335" src="https://github.com/user-attachments/assets/eee2b8bc-15a9-4045-91a1-9866f1c77309" />
 
 
-요청하신 대로 강조용 별표(**)를 모두 제거한 깔끔한 버전입니다. 바로 복사해서 사용하시면 됩니다!
-
 🚀 eBPF 기반 EDR Agent (Policy + Risk Engine) 프로토타입
 1. 개요 (Overview)
 본 프로젝트는 eBPF 기반 EDR(Endpoint Detection and Response) Agent의 정책 기반 탐지 및 위험도 분석 로직을 구현한 프로토타입입니다.
