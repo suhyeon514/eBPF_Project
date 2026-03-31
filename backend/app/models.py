@@ -37,6 +37,7 @@ class TopAlert(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     event_id = Column(String, unique=True, index=True) # OS 원본 로그 ID
+    exec_id = Column(String, nullable=True)           # [추가] Neo4j와 연결할 핵심 키!
     severity = Column(String)       # CRITICAL, HIGH
     alert_name = Column(String)     # 알람명 (예: 랜섬웨어 의심 행위)
     host_info = Column(String)      # 호스트명 (IP)

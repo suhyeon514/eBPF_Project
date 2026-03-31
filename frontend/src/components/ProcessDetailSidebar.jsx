@@ -1,6 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
+import apiClient from '../api/client';
 
 const ProcessDetailSidebar = ({ node, onClose }) => {
+  //로딩 상태 관리
+  const [isGenerating, setIsGenerating] = useState(false);
   if (!node) return null;
 
   const { type, data } = node;
@@ -59,6 +62,45 @@ const ProcessDetailSidebar = ({ node, onClose }) => {
       case 'MEDIUM': return '#d97706';
       case 'LOW': return '#2563eb';
       default: return '#64748b';
+    }
+  };
+
+  const handleGenerateReport = async () => {
+    const execId = data.exec_id;
+    if (!execId) {
+      alert("유효한 Execution ID가 없습니다.");
+      return;
+    }
+
+  setIsGenerating(true); // 로딩 시작
+
+  try {
+      // 1. 백엔드에 PDF 생성 요청 (바이너리 데이터를 받기 위해 responseType 설정 필수)
+      const response = await apiClient.post('/api/v1/report/generate', 
+        { exec_id: execId }, 
+        { responseType: 'blob' } 
+      );
+
+      // 2. 브라우저 메모리에 PDF Blob 객체 생성
+      const blob = new Blob([response.data], { type: 'application/pdf' });
+      const url = window.URL.createObjectURL(blob);
+
+      // 3. 임시 <a> 태그를 만들어 클릭 이벤트 트리거 (호스트 PC로 다운로드)
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `K9_Report_${execId.substring(0, 8)}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+
+      // 4. 메모리 정리
+      link.parentNode.removeChild(link);
+      window.URL.revokeObjectURL(url);
+
+    } catch (err) {
+      console.error("보고서 생성 실패:", err);
+      alert("AI 보고서 생성 중 오류가 발생했습니다. 백엔드 서버 로그를 확인하세요.");
+    } finally {
+      setIsGenerating(false); // 로딩 종료
     }
   };
 
@@ -142,13 +184,28 @@ const ProcessDetailSidebar = ({ node, onClose }) => {
 
       {/* 액션 하단 바 */}
       <div style={{ padding: '20px 30px', borderTop: '1px solid #f1f5f9', backgroundColor: '#f8fafc' }}>
-        <button style={{ 
-          width: '100%', padding: '16px', backgroundColor: '#6366f1', color: 'white', 
-          border: 'none', borderRadius: '12px', fontWeight: '700', fontSize: '14px',
-          cursor: 'pointer', transition: 'background 0.2s',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'
-        }}>
-          <span>✨</span> [AI 시나리오 보고서 생성]
+        <button 
+          onClick={handleGenerateReport} // [수정] 클릭 이벤트 연결
+          disabled={isGenerating}      // [추가] 생성 중일 때 버튼 비활성화
+          style={{ 
+            width: '100%', padding: '16px', 
+            backgroundColor: isGenerating ? '#94a3b8' : '#6366f1', // 로딩 시 색상 변경
+            color: 'white', 
+            border: 'none', borderRadius: '12px', fontWeight: '700', fontSize: '14px',
+            cursor: isGenerating ? 'not-allowed' : 'pointer', 
+            transition: 'background 0.2s',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'
+          }}
+        >
+          {isGenerating ? (
+            <>
+              <span className="animate-spin">⏳</span> 분석 보고서 생성 중...
+            </>
+          ) : (
+            <>
+              <span>✨</span> [AI 시나리오 보고서 생성]
+            </>
+          )}
         </button>
       </div>
     </div>

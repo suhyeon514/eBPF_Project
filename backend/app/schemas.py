@@ -89,6 +89,7 @@ class TokenResponse(BaseModel):
 class TopAlertResponse(BaseModel):
     id: int
     event_id: str
+    exec_id: Optional[str] = None
     severity: str
     alert_name: str
     host_info: str
@@ -218,3 +219,6 @@ class ProcessEdge(BaseModel):
 class GraphResponse(BaseModel):
     nodes: List[ProcessNode]
     edges: List[ProcessEdge]
+
+class ReportRequest(BaseModel):
+    exec_id: str

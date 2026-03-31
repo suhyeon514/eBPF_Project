@@ -1,5 +1,7 @@
 import json
 import os
+from dotenv import load_dotenv
+from pathlib import Path
 import time
 from datetime import datetime, timezone
 from kafka import KafkaConsumer
@@ -10,7 +12,11 @@ from name_map import FIELD_MAPPING, transform_logic
 import ipaddress
 from neo4j import GraphDatabase  # Neo4j 드라이버
 from concurrent.futures import ThreadPoolExecutor # 비동기 처리를 위한 스레드 풀
+import requests
+import urllib.parse
 
+env_path = Path(__file__).resolve().parent.parent / '.env'
+load_dotenv(dotenv_path=env_path)
 
 # --- [1. 설정 및 환경변수] ---
 #KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "127.0.0.1:29092")
@@ -20,10 +26,17 @@ from concurrent.futures import ThreadPoolExecutor # 비동기 처리를 위한 �
 #NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
 KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS") or "127.0.0.1:9092"
 OPENSEARCH_HOST = os.getenv("OPENSEARCH_HOST") or "127.0.0.1"
-DATABASE_URL = os.getenv("DATABASE_URL") or "postgresql://admin:goo423jo_Ming@127.0.0.1:6432/ebpf_db"
-NEO4J_URI = os.getenv("NEO4J_URI") or "bolt://localhost:7687"
-NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD") or "goo423jo_Ming"
+POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD")
 
+DATABASE_URL = os.getenv("DATABASE_URL") or f"postgresql://admin:{POSTGRES_PASSWORD}@127.0.0.1:6432/ebpf_db"
+NEO4J_URI = os.getenv("NEO4J_URI") or "bolt://localhost:7687"
+NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
+
+# 슬랙 알림
+SLACK_WEBHOOK_URL = os.getenv("SLACK_WEBHOOK_URL")
+
+# 대시보드 기본 URL 
+DASHBOARD_BASE_URL = os.getenv("DASHBOARD_URL") or "http://localhost:5173"
 
 
 os_client = OpenSearch(
@@ -159,6 +172,78 @@ class Neo4jManager:
             dest_port=dest_port, 
             proto=net.get("protocol")
         )
+
+# 슬랙 알림 함수
+def send_slack_alert(raw_log, risk_info, dashboard_base_url):
+    """
+    HIGH, CRITICAL 위협 발생 시 슬랙으로 알림을 전송합니다.
+    """
+    if not SLACK_WEBHOOK_URL:
+        print("⚠️ [Slack] 웹훅 URL이 설정되지 않았습니다.")
+        return
+
+    # 1. 데이터 추출 및 안전한 인코딩
+    process_data = raw_log.get("process", {})
+    raw_exec_id = str(process_data.get("exec_id") or "no-id")
+    encoded_exec_id = urllib.parse.quote(raw_exec_id)
+
+    hostname = str(raw_log.get("host", {}).get("hostname") or "Unknown")
+    event_type = str(raw_log.get("event_type") or raw_log.get("kafka_topic") or "Unknown")
+    severity = str(risk_info.get("severity") or "Unknown")
+    rule_name = str(risk_info.get("rule_name") or "Unknown Rule")
+    score = str(risk_info.get("score") or 0)
+
+    # 2. 대시보드 URL 생성
+    base_url = dashboard_base_url.strip() if dashboard_base_url else "http://localhost:5173"
+    if not base_url.startswith("http"):
+        base_url = f"http://{base_url}"
+    detail_url = f"{base_url.rstrip('/')}/process_analysis/{encoded_exec_id}"
+
+    # 3. 슬랙 페이로드 (content -> text 로 수정 완료)
+    payload = {
+        "text": f"🚨 위협 탐지 알림: {rule_name}",
+        "blocks": [
+            {
+                "type": "header",
+                "text": {
+                    "type": "plain_text", 
+                    "text": f"🚨 보안 탐지 알림 ({severity})" # content를 text로 변경
+                }
+            },
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn", 
+                    "text": f"*탐지 규칙:* {rule_name}\n*호스트:* {hostname}\n*위험도:* {severity} ({score}점)\n*이벤트:* {event_type}"
+                }
+            },
+            {
+                "type": "actions",
+                "elements": [
+                    {
+                        "type": "button",
+                        "text": {
+                            "type": "plain_text", 
+                            "text": "상세 보기" # content를 text로 변경
+                        },
+                        "style": "danger",
+                        "url": detail_url
+                    }
+                ]
+            }
+        ]
+    }
+
+    try:
+        response = requests.post(SLACK_WEBHOOK_URL, json=payload, timeout=5)
+        
+        if response.status_code != 200:
+            print(f"❌ Slack 전송 실패 ({response.status_code}): {response.text}")
+        else:
+            print(f"✅ Slack 알림 전송 완료! ({severity})")
+            
+    except Exception as e:
+        print(f"❌ Slack 알림 중 예외 발생: {e}")
 
 
 # --- [2. 유틸리티 함수] ---
@@ -369,6 +454,8 @@ def process_and_save(raw_log, topic, engine, neo4j_mgr):
         # 가장 높은 점수의 매칭 결과 선택
         best_match = None
         max_score = -1
+        final_sev = "Low" # 기본값 설정
+
         for rule in matches:
             score, sev = calculate_dynamic_risk(n_log, rule)
             if score > max_score:
@@ -380,6 +467,10 @@ def process_and_save(raw_log, topic, engine, neo4j_mgr):
             "tactic": best_match['mitre_tactic'], "technique_id": best_match['mitre_technique_id']
         }
         print(f"⚠️ [ALERT] {final_sev} - {best_match['rule_name']} ({max_score})")
+
+        # --- [슬랙 알림 로직] ---
+        if final_sev in ["High", "Critical"]:
+            send_slack_alert(raw_log, raw_log['risk_info'], DASHBOARD_BASE_URL)
     else:
         raw_log['risk_info'] = {"detected": False, "score": 1, "severity": "Low"}
         print(".", end="", flush=True)

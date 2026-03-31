@@ -16,6 +16,28 @@ function Dashboard() {
 
   const GRAFANA_URL = import.meta.env.VITE_GRAFANA_URL || 'http://localhost:3000';
 
+  const handleAnalyze = async (execId) => {
+    if (!execId) {
+      alert("유효한 프로세스 실행 ID가 없습니다.");
+      return;
+    }
+
+    // 분석 페이지 이동 전 Neo4j 데이터 존재 여부 체크 함수
+    try {
+      // 해당 ID로 그래프 데이터가 있는지 미리 확인 (백엔드 router의 404 로직 활용)
+      await apiClient.get(`/api/v1/process_analysis/graph/${execId}`);
+      
+      // 데이터가 있으면 해당 페이지로 이동 (ID 포함)
+      navigate(`/process_analysis/${execId}`);
+    } catch (err) {
+      if (err.response && err.response.status === 404) {
+        alert("해당 프로세스는 현재 Neo4j 데이터베이스에 존재하지 않습니다.");
+      } else {
+        alert("서버 통신 중 오류가 발생했습니다.");
+      }
+    }
+  };
+
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -90,8 +112,12 @@ function Dashboard() {
       {/* 3. 하단 고위험 알람 테이블 */}
       <div style={{ backgroundColor: 'white', borderRadius: '16px', boxShadow: '0 4px 20px rgba(0,0,0,0.05)', padding: '25px', border: '1px solid #eee' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-          <h3 style={{ margin: 0, fontSize: '18px' }}>🚨 상위 5개 고위험 알람</h3>
-          <span style={{ color: '#6c5ce7', fontSize: '14px', cursor: 'pointer', fontWeight: 'bold' }}>전체 보기 &gt;</span>
+          <h3 style={{ margin: 0, fontSize: '18px' }}>🚨 상위 5개 고위험 이벤트(24시간 이내)</h3>
+          <span 
+            onClick={() => navigate('/events')} 
+              style={{ color: '#6c5ce7', fontSize: '14px', cursor: 'pointer', fontWeight: 'bold' }}>
+              전체 보기 &gt;
+          </span>
         </div>
         
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -113,12 +139,11 @@ function Dashboard() {
                 <td style={{ color: '#888', fontSize: '14px' }}>{new Date(alert.event_time).toLocaleString()}</td>
                 <td style={{ textAlign: 'center' }}>
                   <button
-                    onClick={() => navigate('/events')}
+                    onClick={() => handleAnalyze(alert.exec_id)}
                     style={{
                       padding: '8px 16px', borderRadius: '8px', border: 'none',
                       backgroundColor: '#6c5ce7', color: 'white', cursor: 'pointer', fontWeight: 'bold'
-                    }}
-                  >
+                    }}>
                     분석하기
                   </button>
                 </td>
