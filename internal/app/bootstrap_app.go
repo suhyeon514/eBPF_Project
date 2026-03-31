@@ -1,6 +1,8 @@
 package app
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -458,12 +460,12 @@ func (a *BootstrapApp) ensureDependenciesInstalled(ctx context.Context, state *B
 
 	var errs []string
 
-	if err := a.ensureComponentRunning(ctx, "tetragon", "tetragon", "tetragon.service"); err != nil {
-		state.TetragonStatus = ComponentInstallStatusFailed
-		errs = append(errs, fmt.Sprintf("tetragon: %v", err))
-	} else {
-		state.TetragonStatus = ComponentInstallStatusInstalled
-	}
+	// if err := a.ensureComponentRunning(ctx, "tetragon", "tetragon", "tetragon.service"); err != nil {
+	// 	state.TetragonStatus = ComponentInstallStatusFailed
+	// 	errs = append(errs, fmt.Sprintf("tetragon: %v", err))
+	// } else {
+	// 	state.TetragonStatus = ComponentInstallStatusInstalled
+	// }
 
 	if err := a.ensureComponentRunning(ctx, "fluent-bit", "fluent-bit", "fluent-bit.service"); err != nil {
 		state.FluentBitStatus = ComponentInstallStatusFailed
@@ -487,54 +489,40 @@ func (a *BootstrapApp) ensureComponentRunning(
 	binaryName string,
 	serviceName string,
 ) error {
-	// 1) 바이너리 확인
-	binPath, ok := a.findBinaryPath(binaryName)
+	var runPath string
+	var ok bool
+
+	switch componentName {
+	case "fluent-bit":
+		runPath, ok = a.findBundledEntrypoint(componentName)
+	default:
+		return fmt.Errorf("unknown component for bundled install: %s", componentName)
+	}
+
 	if !ok {
-		// 2) 없으면 서버 artifact 설치 시도
 		installedPath, err := a.installComponentArtifact(ctx, componentName, binaryName)
 		if err != nil {
 			return err
 		}
-		binPath = installedPath
+		runPath = installedPath
 	}
 
-	// PATH 보정(현재 프로세스)
-	a.ensurePathContains(filepath.Dir(binPath))
+	a.ensurePathContains(filepath.Dir(runPath))
 
-	// 3) systemd가 있으면 서비스 기동
 	if _, err := exec.LookPath("systemctl"); err != nil {
 		return nil
 	}
 
-	enableCmd := exec.CommandContext(ctx, "systemctl", "enable", "--now", serviceName)
-	if out, err := enableCmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("systemctl enable --now %s failed: %v (%s)", serviceName, err, strings.TrimSpace(string(out)))
-	}
-
-	activeCmd := exec.CommandContext(ctx, "systemctl", "is-active", "--quiet", serviceName)
-	if out, err := activeCmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("service %s not active: %v (%s)", serviceName, err, strings.TrimSpace(string(out)))
+	switch componentName {
+	case "fluent-bit":
+		if err := a.ensureBundledSystemdService(ctx, serviceName, runPath); err != nil {
+			return fmt.Errorf("ensure fluent-bit bundled service: %w", err)
+		}
+	default:
+		return fmt.Errorf("unknown component for systemd service: %s", componentName)
 	}
 
 	return nil
-}
-
-func (a *BootstrapApp) findBinaryPath(binaryName string) (string, bool) {
-	if p, err := exec.LookPath(binaryName); err == nil {
-		return p, true
-	}
-
-	candidates := []string{
-		filepath.Join(a.cfg.Paths.WorkDir, "bin", binaryName),
-		filepath.Join("/usr/local/bin", binaryName),
-	}
-	for _, p := range candidates {
-		st, err := os.Stat(p)
-		if err == nil && !st.IsDir() && (st.Mode()&0o111) != 0 {
-			return p, true
-		}
-	}
-	return "", false
 }
 
 func (a *BootstrapApp) installComponentArtifact(ctx context.Context, componentName, binaryName string) (string, error) {
@@ -598,7 +586,10 @@ func (a *BootstrapApp) installComponentArtifact(ctx context.Context, componentNa
 		return "", fmt.Errorf("build download request: %w", err)
 	}
 
-	dresp, err := httpClient.Do(dreq)
+	downloadClient := *httpClient
+	downloadClient.Timeout = 0
+
+	dresp, err := downloadClient.Do(dreq)
 	if err != nil {
 		return "", fmt.Errorf("download artifact: %w", err)
 	}
@@ -626,21 +617,73 @@ func (a *BootstrapApp) installComponentArtifact(ctx context.Context, componentNa
 		}
 	}
 
-	targetDir := filepath.Join(a.cfg.Paths.WorkDir, "bin")
-	if err := os.MkdirAll(targetDir, 0o755); err != nil {
-		return "", fmt.Errorf("mkdir target dir: %w", err)
+	workDir, err := os.MkdirTemp("", "artifact-*")
+	if err != nil {
+		return "", fmt.Errorf("create temp work dir: %w", err)
 	}
-	targetPath := filepath.Join(targetDir, binaryName)
-	if err := os.WriteFile(targetPath, raw, 0o755); err != nil {
-		return "", fmt.Errorf("write binary: %w", err)
+	defer os.RemoveAll(workDir)
+
+	archivePath := filepath.Join(workDir, componentName+".tar.gz")
+	if err := os.WriteFile(archivePath, raw, 0o600); err != nil {
+		return "", fmt.Errorf("write archive temp file: %w", err)
 	}
 
-	// /usr/local/bin 심볼릭 링크 시도(권한 없으면 무시)
-	linkPath := filepath.Join("/usr/local/bin", binaryName)
-	_ = os.Remove(linkPath)
-	_ = os.Symlink(targetPath, linkPath)
+	extractDir := filepath.Join(workDir, "extract")
+	if err := os.MkdirAll(extractDir, 0o755); err != nil {
+		return "", fmt.Errorf("mkdir extract dir: %w", err)
+	}
 
-	return targetPath, nil
+	if err := extractTarGz(archivePath, extractDir); err != nil {
+		return "", fmt.Errorf("extract tar.gz: %w", err)
+	}
+
+	// tar.gz 내부 top-level bundle 디렉터리 찾기
+	bundleRoot, err := findBundleRoot(extractDir, componentName)
+	if err != nil {
+		return "", fmt.Errorf("find bundle root: %w", err)
+	}
+
+	// 번들 최소 구조 검증
+	if err := validateFluentBitBundle(bundleRoot); err != nil {
+		return "", fmt.Errorf("validate fluent-bit bundle: %w", err)
+	}
+
+	targetDir := filepath.Join("/opt/ebpf-edr/components", componentName)
+	if err := os.MkdirAll(filepath.Dir(targetDir), 0o755); err != nil {
+		return "", fmt.Errorf("mkdir component parent dir: %w", err)
+	}
+
+	// 원자적 교체에 가깝게 temp -> rename
+	stageDir := targetDir + ".new"
+	_ = os.RemoveAll(stageDir)
+	if err := copyDir(bundleRoot, stageDir); err != nil {
+		return "", fmt.Errorf("stage bundle dir: %w", err)
+	}
+
+	// 실행 권한 보정
+	_ = os.Chmod(filepath.Join(stageDir, "run-fluent-bit.sh"), 0o755)
+	_ = os.Chmod(filepath.Join(stageDir, "bin", "fluent-bit"), 0o755)
+
+	// 추가: 로컬 configs/fluent-bit.yaml -> stageDir/conf/fluent-bit.yaml
+	if componentName == "fluent-bit" {
+		if err := copyLocalFluentBitConfig(stageDir); err != nil {
+			return "", fmt.Errorf("copy fluent-bit config into bundle: %w", err)
+		}
+	}
+
+	oldDir := targetDir + ".old"
+	_ = os.RemoveAll(oldDir)
+	if _, err := os.Stat(targetDir); err == nil {
+		if err := os.Rename(targetDir, oldDir); err != nil {
+			return "", fmt.Errorf("backup existing bundle dir: %w", err)
+		}
+	}
+	if err := os.Rename(stageDir, targetDir); err != nil {
+		return "", fmt.Errorf("activate bundle dir: %w", err)
+	}
+	_ = os.RemoveAll(oldDir)
+
+	return filepath.Join(targetDir, "run-fluent-bit.sh"), nil
 }
 
 func (a *BootstrapApp) ensurePathContains(dir string) {
@@ -1154,17 +1197,6 @@ func (a *BootstrapApp) ensureServerCACertPath() error {
 	return fmt.Errorf("ca cert file not found (configured: %q)", cfgPath)
 }
 
-func validateAgentID(v string) error {
-	v = strings.TrimSpace(v)
-	if v == "" {
-		return fmt.Errorf("agent_id is empty")
-	}
-	if strings.HasPrefix(v, "todo-") || strings.Contains(v, "install-uuid") {
-		return fmt.Errorf("invalid placeholder agent_id: %q", v)
-	}
-	return nil
-}
-
 func detectPrimaryIPv4() string {
 	// 1) 기본 라우팅 기준 추정
 	conn, err := net.Dial("udp", "8.8.8.8:80")
@@ -1206,4 +1238,434 @@ func detectPrimaryIPv4() string {
 	}
 
 	return ""
+}
+
+func (a *BootstrapApp) ensureSystemdService(
+	ctx context.Context,
+	serviceName string,
+	binPath string,
+	configPath string,
+) error {
+	// serviceName 예: "fluent-bit.service"
+	// binPath 예: "/usr/local/bin/fluent-bit"
+	// configPath 예: "/etc/ebpf-edr/fluent-bit/fluent-bit.yaml"
+
+	if strings.TrimSpace(serviceName) == "" {
+		return fmt.Errorf("service name is empty")
+	}
+	if strings.TrimSpace(binPath) == "" {
+		return fmt.Errorf("binary path is empty")
+	}
+
+	unitPath := filepath.Join("/etc/systemd/system", serviceName)
+
+	unitContent := a.buildFluentBitServiceUnit(serviceName, binPath, configPath)
+
+	// 기존 파일과 내용이 다를 때만 덮어쓰기
+	needWrite := true
+	if existing, err := os.ReadFile(unitPath); err == nil {
+		if string(existing) == unitContent {
+			needWrite = false
+		}
+	}
+
+	if needWrite {
+		if err := os.WriteFile(unitPath, []byte(unitContent), 0o644); err != nil {
+			return fmt.Errorf("write systemd unit file %s: %w", unitPath, err)
+		}
+	}
+
+	// systemd 설정 다시 읽기
+	daemonReloadCmd := exec.CommandContext(ctx, "systemctl", "daemon-reload")
+	if out, err := daemonReloadCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("systemctl daemon-reload failed: %v (%s)", err, strings.TrimSpace(string(out)))
+	}
+
+	// 부팅 시 자동 시작 + 즉시 시작
+	enableCmd := exec.CommandContext(ctx, "systemctl", "enable", "--now", serviceName)
+	if out, err := enableCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("systemctl enable --now %s failed: %v (%s)", serviceName, err, strings.TrimSpace(string(out)))
+	}
+
+	// 실제 active 상태인지 확인
+	activeCmd := exec.CommandContext(ctx, "systemctl", "is-active", "--quiet", serviceName)
+	if out, err := activeCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("service %s not active: %v (%s)", serviceName, err, strings.TrimSpace(string(out)))
+	}
+
+	return nil
+}
+
+func (a *BootstrapApp) buildFluentBitServiceUnit(
+	serviceName string,
+	binPath string,
+	configPath string,
+) string {
+	_ = serviceName
+
+	// configPath가 비어 있으면 -c 옵션 없이 실행
+	execStart := binPath
+	if strings.TrimSpace(configPath) != "" {
+		execStart = fmt.Sprintf("%s -c %s", shellEscape(binPath), shellEscape(configPath))
+	} else {
+		execStart = shellEscape(binPath)
+	}
+
+	return fmt.Sprintf(`[Unit]
+Description=Fluent Bit
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%s
+Restart=always
+RestartSec=3
+User=root
+Group=root
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
+`, execStart)
+}
+
+func shellEscape(s string) string {
+	return `'` + strings.ReplaceAll(s, `'`, `'\''`) + `'`
+}
+
+func extractTarGz(archivePath, destDir string) error {
+	f, err := os.Open(archivePath)
+	if err != nil {
+		return fmt.Errorf("open archive: %w", err)
+	}
+	defer f.Close()
+
+	gzr, err := gzip.NewReader(f)
+	if err != nil {
+		return fmt.Errorf("create gzip reader: %w", err)
+	}
+	defer gzr.Close()
+
+	tr := tar.NewReader(gzr)
+
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("read tar entry: %w", err)
+		}
+		if hdr == nil {
+			continue
+		}
+
+		name := strings.TrimSpace(hdr.Name)
+		if name == "" {
+			continue
+		}
+
+		targetPath := filepath.Join(destDir, name)
+		cleanDest := filepath.Clean(destDir) + string(os.PathSeparator)
+		cleanTarget := filepath.Clean(targetPath)
+
+		// path traversal 방지
+		if !strings.HasPrefix(cleanTarget, cleanDest) && cleanTarget != filepath.Clean(destDir) {
+			return fmt.Errorf("invalid archive path: %s", hdr.Name)
+		}
+
+		switch hdr.Typeflag {
+		case tar.TypeDir:
+			if err := os.MkdirAll(cleanTarget, os.FileMode(hdr.Mode)); err != nil {
+				return fmt.Errorf("mkdir extracted dir %s: %w", cleanTarget, err)
+			}
+
+		case tar.TypeReg, tar.TypeRegA:
+			parentDir := filepath.Dir(cleanTarget)
+			if err := os.MkdirAll(parentDir, 0o755); err != nil {
+				return fmt.Errorf("mkdir parent dir %s: %w", parentDir, err)
+			}
+
+			outFile, err := os.OpenFile(cleanTarget, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, os.FileMode(hdr.Mode))
+			if err != nil {
+				return fmt.Errorf("create extracted file %s: %w", cleanTarget, err)
+			}
+
+			if _, err := io.Copy(outFile, tr); err != nil {
+				outFile.Close()
+				return fmt.Errorf("write extracted file %s: %w", cleanTarget, err)
+			}
+
+			if err := outFile.Close(); err != nil {
+				return fmt.Errorf("close extracted file %s: %w", cleanTarget, err)
+			}
+
+		case tar.TypeSymlink:
+			// 초기 버전에서는 심볼릭 링크는 안전상 막는 편이 낫다.
+			return fmt.Errorf("symlink is not allowed in artifact: %s", hdr.Name)
+
+		default:
+			// 필요 없는 타입은 일단 무시
+			continue
+		}
+	}
+
+	return nil
+}
+
+func findFileByBaseName(rootDir, baseName string) (string, error) {
+	var found string
+
+	err := filepath.Walk(rootDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			return nil
+		}
+		if filepath.Base(path) == baseName {
+			found = path
+			return io.EOF // 탐색 중단용
+		}
+		return nil
+	})
+
+	if err != nil && !errors.Is(err, io.EOF) {
+		return "", err
+	}
+	if strings.TrimSpace(found) == "" {
+		return "", fmt.Errorf("file %q not found under %s", baseName, rootDir)
+	}
+
+	return found, nil
+}
+
+func copyFile(src, dst string, mode os.FileMode) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return fmt.Errorf("open src file: %w", err)
+	}
+	defer in.Close()
+
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return fmt.Errorf("mkdir dst dir: %w", err)
+	}
+
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode)
+	if err != nil {
+		return fmt.Errorf("open dst file: %w", err)
+	}
+
+	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
+		return fmt.Errorf("copy file content: %w", err)
+	}
+
+	if err := out.Close(); err != nil {
+		return fmt.Errorf("close dst file: %w", err)
+	}
+
+	if err := os.Chmod(dst, mode); err != nil {
+		return fmt.Errorf("chmod dst file: %w", err)
+	}
+
+	return nil
+}
+
+func (a *BootstrapApp) InstallArtifactOnly(ctx context.Context, componentName, binaryName string) (string, error) {
+	if strings.TrimSpace(componentName) == "" {
+		return "", errors.New("componentName is empty")
+	}
+	if strings.TrimSpace(binaryName) == "" {
+		return "", errors.New("binaryName is empty")
+	}
+	return a.installComponentArtifact(ctx, componentName, binaryName)
+}
+
+// EnsureDependenciesOnly는 enrollment/정책 수신 없이 dependency 설치 단계만 실행한다.
+// 테스트 전용 진입점.
+func (a *BootstrapApp) EnsureDependenciesOnly(ctx context.Context) error {
+	if err := a.ensurePaths(); err != nil {
+		return fmt.Errorf("ensure bootstrap paths: %w", err)
+	}
+
+	state, err := a.loadState()
+	if err != nil {
+		return fmt.Errorf("load bootstrap state: %w", err)
+	}
+
+	// 테스트 편의: dependency 단계 진입 가능하도록 상태 보정
+	state.EnrollmentStatus = EnrollmentStatusApproved
+	if state.CreatedAt.IsZero() {
+		state.CreatedAt = time.Now()
+	}
+	state.UpdatedAt = time.Now()
+
+	if err := a.saveState(state); err != nil {
+		return fmt.Errorf("save bootstrap state: %w", err)
+	}
+
+	return a.ensureDependenciesInstalled(ctx, state)
+}
+
+func (a *BootstrapApp) findBundledEntrypoint(componentName string) (string, bool) {
+	baseDir := filepath.Join("/opt/ebpf-edr/components", componentName)
+
+	candidates := []string{
+		filepath.Join(baseDir, "run-"+componentName+".sh"),
+		filepath.Join(baseDir, "run-fluent-bit.sh"), // fluent-bit 전용
+		filepath.Join(baseDir, "bin", componentName),
+	}
+
+	for _, p := range candidates {
+		st, err := os.Stat(p)
+		if err == nil && !st.IsDir() && (st.Mode()&0o111) != 0 {
+			return p, true
+		}
+	}
+
+	return "", false
+}
+
+func findBundleRoot(extractDir, componentName string) (string, error) {
+	entries, err := os.ReadDir(extractDir)
+	if err != nil {
+		return "", err
+	}
+
+	if len(entries) == 1 && entries[0].IsDir() {
+		return filepath.Join(extractDir, entries[0].Name()), nil
+	}
+
+	// top-level dir가 하나가 아닐 수도 있으니 componentName 우선 탐색
+	candidate := filepath.Join(extractDir, componentName)
+	if st, err := os.Stat(candidate); err == nil && st.IsDir() {
+		return candidate, nil
+	}
+
+	return "", fmt.Errorf("bundle root not found under %s", extractDir)
+}
+
+func validateFluentBitBundle(root string) error {
+	required := []string{
+		filepath.Join(root, "run-fluent-bit.sh"),
+		filepath.Join(root, "bin", "fluent-bit"),
+		// filepath.Join(root, "conf", "fluent-bit.yaml"),
+	}
+
+	for _, p := range required {
+		st, err := os.Stat(p)
+		if err != nil {
+			return fmt.Errorf("required file missing: %s", p)
+		}
+		if st.IsDir() {
+			return fmt.Errorf("required file is directory: %s", p)
+		}
+	}
+
+	return nil
+}
+
+func copyDir(src, dst string) error {
+	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dst, rel)
+
+		if info.IsDir() {
+			return os.MkdirAll(target, info.Mode().Perm())
+		}
+
+		// 심볼릭 링크 금지 정책 유지
+		if info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("symlink not allowed in bundle: %s", path)
+		}
+
+		return copyFile(path, target, info.Mode().Perm())
+	})
+}
+
+func (a *BootstrapApp) ensureBundledSystemdService(
+	ctx context.Context,
+	serviceName string,
+	runPath string,
+) error {
+	if strings.TrimSpace(serviceName) == "" {
+		return fmt.Errorf("service name is empty")
+	}
+	if strings.TrimSpace(runPath) == "" {
+		return fmt.Errorf("run path is empty")
+	}
+
+	unitPath := filepath.Join("/etc/systemd/system", serviceName)
+	unitContent := fmt.Sprintf(`[Unit]
+Description=Fluent Bit (bundled)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%s
+Restart=always
+RestartSec=3
+User=root
+Group=root
+
+[Install]
+WantedBy=multi-user.target
+`, shellEscape(runPath))
+
+	needWrite := true
+	if existing, err := os.ReadFile(unitPath); err == nil && string(existing) == unitContent {
+		needWrite = false
+	}
+
+	if needWrite {
+		if err := os.WriteFile(unitPath, []byte(unitContent), 0o644); err != nil {
+			return fmt.Errorf("write systemd unit file %s: %w", unitPath, err)
+		}
+	}
+
+	daemonReloadCmd := exec.CommandContext(ctx, "systemctl", "daemon-reload")
+	if out, err := daemonReloadCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("systemctl daemon-reload failed: %v (%s)", err, strings.TrimSpace(string(out)))
+	}
+
+	enableCmd := exec.CommandContext(ctx, "systemctl", "enable", "--now", serviceName)
+	if out, err := enableCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("systemctl enable --now %s failed: %v (%s)", serviceName, err, strings.TrimSpace(string(out)))
+	}
+
+	activeCmd := exec.CommandContext(ctx, "systemctl", "is-active", "--quiet", serviceName)
+	if out, err := activeCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("service %s not active: %v (%s)", serviceName, err, strings.TrimSpace(string(out)))
+	}
+
+	return nil
+}
+
+func copyLocalFluentBitConfig(stageDir string) error {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("get working directory: %w", err)
+	}
+
+	src := filepath.Join(cwd, "configs", "fluent-bit.yaml")
+	if _, err := os.Stat(src); err != nil {
+		return fmt.Errorf("source config not found: %s (%w)", src, err)
+	}
+
+	dst := filepath.Join(stageDir, "conf", "fluent-bit.yaml")
+	if err := copyFile(src, dst, 0o644); err != nil {
+		return fmt.Errorf("copy %s -> %s: %w", src, dst, err)
+	}
+
+	return nil
 }
