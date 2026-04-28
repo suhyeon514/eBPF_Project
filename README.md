@@ -12,8 +12,8 @@ eBPF 기반 실시간 탐지 및 대응 솔루션
 **기획 배경:** 대형 통신사를 타겟으로 한 은닉형 악성코드 사태 등 고도화된 보안 위협이 증가함에 따라, 시스템 수정 없이 커널 샌드박스에서 안전하게 길목을 제어할 수 있는 `eBPF` 기술의 필요성 대두
 **기대 효과:** 
   1. 위협 발생 시 커널 레벨에서 즉각 탐지하여 Slack으로 실시간 알림 전송
-  2. [cite_start]사용자 요청 시 침해 시스템의 메모리 덤프(AVML)를 즉각 수행해 원본 증거 데이터 확보
-  3. [cite_start]정보통신망법 형식에 맞춘 보고서 초안을 자동으로 생성하여 초기 대응 인력 보강
+  2. 사용자 요청 시 침해 시스템의 메모리 덤프(AVML)를 즉각 수행해 원본 증거 데이터 확보
+  3. 정보통신망법 형식에 맞춘 보고서 초안을 자동으로 생성하여 초기 대응 인력 보강
 
 ---
 
@@ -53,22 +53,22 @@ K9의 아키텍처는 크게 에이전트(Agent)와 분석 중앙 서버(Analysi
 <img width="676" height="274" alt="Image" src="https://github.com/user-attachments/assets/5bdd2664-3dcf-4301-af77-d5f2e2f00fa7" />
 
 
-**Agent**
-* `Go (Golang)`: 고루틴/채널을 활용한 비동기 수집 로직
-* `eBPF (Tetragon)`: 커널 레벨 파일/네트워크/프로세스 콜 정밀 후킹
-* `Fluent-bit`: 로그 수집 및 라우팅
+### Environment & Versions
 
-**Data Pipeline & Analysis Server**
-* `Apache Kafka`: 대량 로그 비동기 메시지 큐
-* `Python Worker`: 데이터 정규화 및 스코어링 엔진
-* `OpenSearch`: 실시간 필터링 및 로그 검색
-* * `Neo4j`: 그래프 DB를 통한 프로세스 계층 연관성 분석
-* `PostgreSQL`: 인프라/메타데이터 RDBMS
+**Agent (에이전트 및 테스트 베드)**
+* **OS:** Ubuntu 22.04 (Kernel 3.18+)
+* **Web/DB:** Nginx 1.18.x, PHP-FPM 8.1.x, MariaDB 10.6.x
+* **Target App:** WordPress 6.9.x
+* **Language:** Go (Golang)
+* **eBPF Engine:** Tetragon
+* **OS/Net/Sys:** Auditd, Journald, Conntrack, Nftables, gopsutil
 
-**Web & UI**
-* `FastAPI` / `React`: 웹 대시보드 및 API 연동
-* `Grafana`: DB 연동 모니터링
-* `Playwright`: 브라우저 자동화 기반 리포트 PDF 렌더링 엔진
+**Analysis Server (중앙 분석 서버)**
+* **Data Pipeline & MQ:** Kafka 3.8.0, Python (Worker)
+* **Database & Search Engine:** * OpenSearch 2.12.0
+  * Neo4j 5.15.0
+  * PostgreSQL 15.6
+* **Web & Visualization:** Grafana 10.4.0, FastAPI, React
 
 ---
 
