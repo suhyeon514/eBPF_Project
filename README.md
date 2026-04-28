@@ -20,10 +20,10 @@ eBPF 기반 실시간 탐지 및 대응 솔루션
 ## 🏗 System Architecture
 K9의 아키텍처는 크게 에이전트(Agent)와 분석 중앙 서버(Analysis Server)로 구성됩니다.
 
-**Agent Layer:** `eBPF(Tetragon)` 엔진을 통해 커널 레벨의 이벤트(프로세스, 파일, 네트워크, 권한)를 감시하며, 동시에 L7 계층 분석을 위한 전용 컬렉터(Nginx, Auditd 등)를 병행 운용합니다.
-**Data Pipeline:** 수집된 이기종 로그는 `Fluent-bit`를 거쳐 중앙 서버의 `Kafka` 메시지 큐로 스트리밍되며, Python Worker가 데이터를 추출해 정규화 및 위험도를 산출합니다.
-**Analysis & DB Layer:** 정제된 데이터는 빠른 검색을 위해 `OpenSearch`에, 프로세스 상관관계 분석을 위해 `Neo4j` 그래프 DB에 적재되며 `PostgreSQL`로 자산을 관리합니다.
-**Web UI & IR:** 시각화는 `Grafana`, `FastAPI`, `React`를 통해 제공되며, 메모리 덤프(AVML) 파일은 S3 버킷으로 다이렉트 전송됩니다.
+* **Agent Layer:** `eBPF(Tetragon)` 엔진을 통해 커널 레벨의 이벤트(프로세스, 파일, 네트워크, 권한)를 감시하며, 동시에 L7 계층 분석을 위한 전용 컬렉터(Nginx, Auditd 등)를 병행 운용합니다.
+* **Data Pipeline:** 수집된 이기종 로그는 `Fluent-bit`를 거쳐 중앙 서버의 `Kafka` 메시지 큐로 스트리밍되며, Python Worker가 데이터를 추출해 정규화 및 위험도를 산출합니다.
+* **Analysis & DB Layer:** 정제된 데이터는 빠른 검색을 위해 `OpenSearch`에, 프로세스 상관관계 분석을 위해 `Neo4j` 그래프 DB에 적재되며 `PostgreSQL`로 자산을 관리합니다.
+* **Web UI & IR:** 시각화는 `Grafana`, `FastAPI`, `React`를 통해 제공되며, 메모리 덤프(AVML) 파일은 S3 버킷으로 다이렉트 전송됩니다.
 
 ---
 
