@@ -1,9 +1,9 @@
 # eBPF_Project
 eBPF 기반 실시간 탐지 및 대응 솔루션
-# 🛡️ K9 - eBPF 기반 실시간 탐지 및 침해사고 대응(IR) 자동화 EDR 솔루션
+## 🛡️ K9 - eBPF 기반 실시간 탐지 및 침해사고 대응(IR) 자동화 EDR 솔루션
 
 
-**K9(Kernal 9)**은 커널 제어 기술인 eBPF를 활용하여 호스트 시스템을 안전하게 모니터링하고, 탐지부터 메모리 덤프, LLM 기반 법정 규격 보고서 자동 생성까지 **침해사고 대응(IR)의 End-to-End 과정을 자동화**한 사용자 친화적 지능형 엔드포인트 보안 플랫폼입니다.
+**K9(Kernel 9)**은 커널 제어 기술인 eBPF를 활용하여 호스트 시스템을 안전하게 모니터링하고, 탐지부터 메모리 덤프, LLM 기반 법정 규격 보고서 자동 생성까지 **침해사고 대응(IR)의 End-to-End 과정을 자동화**한 사용자 친화적 지능형 엔드포인트 보안 플랫폼입니다.
 
 ---
 
@@ -17,7 +17,14 @@ eBPF 기반 실시간 탐지 및 대응 솔루션
 
 ---
 
-## 🏗 System Architecture
+## 📂 저장소 구조 및 컴포넌트 안내
+본 레포지토리는 목적에 따라 브랜치를 분리하여 각 서버 컴포넌트를 독립적으로 관리하고 있습니다. 코드를 확인하시려면 아래의 각 브랜치 링크를 클릭해 주세요.
+| Component | Branch | Description |
+| :--- | :--- | :--- |
+| **Agent Server** | [`agent-server` 바로가기](https://github.com/suhyeon514/eBPF_Project/tree/agent-server) | eBPF 기반 이벤트 수집, 정규화 및 엔드포인트 제어 |
+| **Analysis Server** | [`analysis-server` 바로가기](https://github.com/suhyeon514/eBPF_Project/tree/analysis-server) | 데이터 파이프라인, 위협 분석 및 LLM 워커 연동 |
+
+### 🏗 System Architecture
 K9의 아키텍처는 크게 에이전트(Agent)와 분석 중앙 서버(Analysis Server)로 구성됩니다.
 
 * **Agent Layer:** `eBPF(Tetragon)` 엔진을 통해 커널 레벨의 이벤트(프로세스, 파일, 네트워크, 권한)를 감시하며, 동시에 L7 계층 분석을 위한 전용 컬렉터(Nginx, Auditd 등)를 병행 운용합니다.
