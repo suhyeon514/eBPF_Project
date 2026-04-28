@@ -83,14 +83,15 @@ Linux eBPF 기반 엔드포인트 탐지·대응(EDR) 에이전트
 ---
 
 ### 🚀 실행 방법 (Getting Started)
-1. 요구 사항 (Prerequisites)
-* OS / Kernel: Linux Ubuntu 20.04+ (Kernel 5.10 이상 권장, eBPF 지원 필수)
 
-* Language: Go 1.21+
+* 요구 사항 (Prerequisites)
+    * OS / Kernel: Linux Ubuntu 20.04+ (Kernel 5.10 이상 권장, eBPF 지원 필수)
 
-* 권한: eBPF 제어 및 메모리 덤프를 위해 root 권한 필수
+    * Language: Go 1.21+
 
-* 의존성 도구: Tetragon (커널 이벤트 수집), AVML (메모리 덤프), Fluent Bit (로그 전송)
+    * 권한: eBPF 제어 및 메모리 덤프를 위해 root 권한 필수
+
+    * 의존성 도구: Tetragon (커널 이벤트 수집), AVML (메모리 덤프), Fluent Bit (로그 전송)
 
 ### 📦 주요 패키지 및 의존성
 
@@ -102,15 +103,12 @@ Linux eBPF 기반 엔드포인트 탐지·대응(EDR) 에이전트
 | `gopkg.in/yaml.v3` | YAML 설정 파일 파싱 |
 | **표준 라이브러리** | TLS, crypto/x509, crypto/ecdsa 등 |
 
----
 
 ### 🛠 빌드 (Build)
 
-현재 레포지토리에 `go.mod` 파일이 제외(`.gitignore`)되어 있으므로, 빌드 전 모듈 초기화가 필요합니다.
-
 ```bash
 # 1. Go 모듈 초기화 및 의존성 다운로드
-go mod init [github.com/suhyeon514/eBPF_Project](https://github.com/suhyeon514/eBPF_Project)
+go mod init github.com/suhyeon514/eBPF_Project
 go mod tidy
 
 # 2. 기본 빌드
@@ -120,7 +118,7 @@ go build -o agent ./cmd/agent/...
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o agent ./cmd/agent/...
 ```
 
-실행 방법 (Usage)
+### 실행 (Usage)
 * 실행 목적에 따라 제공되는 서브커맨드(run, bootstrap, runtime)를 활용할 수 있습니다. (eBPF 제어를 위해 root 권한이 필요합니다.)
 
 ```
@@ -195,10 +193,14 @@ artifact:
 s3dumpinfo:
   s3_bucket_name: "your-forensic-bucket"
   s3_region: "....."
-  s3_access_key_id: "AKIA..."       # ⚠️ 프로덕션에서는 IAM Role 사용 권장
+  s3_access_key_id: "dummy-key..."       # ⚠️ 프로덕션에서는 IAM Role 사용 권장
   s3_secret_access_key: "..."
 ```
 </details>
+
+* **보안 참고 (Security Notice)**
+    * client.key (개인키) 및 state.json (상태 정보)과 같은 민감한 파일들은 에이전트 구동 시 자동으로 0600 권한으로 생성 및 관리되며, root 사용자 외의 접근을 원천 차단하여 탈취 위험을 방지합니다.
+
 
 <br>
 
@@ -268,21 +270,26 @@ forensic:
   dump_path: "/your/forensic/dumps/path"
 ```
 </details>
-```
+
 
 
 ---
 
 ### 🛠 확인 사항 (트러블슈팅)
 
-1. enrollment_status: pending 상태에서 멈출 경우
-  * 원인: 중앙 관리자가 아직 에이전트의 CSR 등록 요청을 승인하지 않았습니다.
-  * 해결: 분석 서버 웹 대시보드에서 해당 에이전트의 가입 요청을 승인해야 합니다.
+1. **`enrollment_status: pending` 상태에서 멈출 경우**
+  * **원인:** 중앙 관리자가 아직 에이전트의 CSR 등록 요청을 승인하지 않았습니다.
+  * **해결:** 분석 서버 웹 대시보드에서 해당 에이전트의 가입 요청을 승인해야 합니다.
 
-2. runtime cannot start: enrollment has not completed
-  * 해결: Runtime 진입 전 mTLS 인증서가 필요합니다. agent bootstrap 서브커맨드를 먼저 실행하여 서버 등록을 완료하세요.
+2. **`runtime cannot start: enrollment has not completed` 오류**
+  * **해결:** Runtime 진입 전 mTLS 인증서가 필요합니다. `agent bootstrap` 서브커맨드를 먼저 실행하여 서버 등록을 완료하세요.
 
-3. 메모리 덤프(AVML) 실패 오류 발생
-  * 원인: avml 바이너리가 시스템 PATH에 없거나, 권한이 부족합니다.
-  * 해결: 호스트에 Microsoft AVML을 설치하고, 에이전트가 root 권한으로 실행 중인지 확인하세요. RAM 용량만큼의 디스크 여유 공간도 필요합니다.
+3. **메모리 덤프(AVML) 실패 오류 발생**
+  * **원인:** `avml` 바이너리가 시스템 PATH에 없거나, 권한이 부족합니다.
+  * **해결:** 호스트에 Microsoft AVML을 설치하고, 에이전트가 `root` 권한으로 실행 중인지 확인하세요. (※ RAM 용량만큼의 디스크 여유 공간 필요)
+
+
+---
+
+
 
