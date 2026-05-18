@@ -15,7 +15,7 @@ from ... import models
 env_path = Path(__file__).resolve().parent.parent.parent.parent / ".env"
 load_dotenv(dotenv_path=env_path)
 
-SECRET_KEY = os.getenv("SECRET_KEY", "ebpf-project-super-secret-key-12345")
+SECRET_KEY = os.getenv("SECRET_KEY", "YOUR-SECRET-KEY")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24
 
